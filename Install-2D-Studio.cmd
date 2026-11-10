@@ -114,6 +114,8 @@ if exist "%SRC%\2D Niche Prompt for Claude.pdf" copy /y "%SRC%\2D Niche Prompt f
 rem studio kit (never overwrites projects\)
 robocopy "%EXT%\skills\make-2d-video\kit" "%STUDIO%" /E /XD projects /NFL /NDL /NJH /NJS /NP >nul
 if not exist "%STUDIO%\projects" mkdir "%STUDIO%\projects"
+rem let the renderer use installed Chrome/Edge when Playwright's Chromium download is blocked
+%PY% "%HOME2D%\app\patch_kit.py" "%STUDIO%"
 echo   [ok] studio kit  -^> %STUDIO%
 
 rem Claude Code skills (the plugin's 5 skills + ScriptForge)
@@ -129,6 +131,9 @@ rem ---------- 5. Node packages + Chromium -------------------------------------
 call :banner "5/7  three.js, Playwright and headless Chromium"
 pushd "%STUDIO%"
 call npm install --no-fund --no-audit
+echo.
+echo   Downloading headless Chromium. If it sits at 100%% for more than 3 minutes, antivirus is
+echo   blocking the unpack: press Ctrl+C, answer N, and the studio will use your Chrome/Edge instead.
 call npx --yes playwright install chromium
 popd
 
@@ -136,6 +141,8 @@ rem ---------- 6. Python packages ----------------------------------------------
 call :banner "6/7  Python packages"
 %PY% -m pip install --upgrade pip --quiet
 %PY% -m pip install --upgrade numpy scipy faster-whisper edge-tts customtkinter pillow google-api-python-client google-auth-oauthlib google-auth-httplib2
+rem remember which Python the app must use (the launcher reads this)
+%PY% -c "import sys, pathlib; pathlib.Path(r'%HOME2D%\python.txt').write_text(sys.executable)"
 
 rem ---------- 7. Check + shortcut ---------------------------------------------
 call :banner "7/7  Checking everything"
@@ -183,14 +190,18 @@ if errorlevel 1 (echo   [!] %1 still not on PATH - open a new window and re-run 
 exit /b 0
 
 :findpy
+rem faster-whisper has no packages for very new Pythons (3.14+), so prefer 3.12 / 3.11 / 3.13 / 3.10
 set "PY="
 where py >nul 2>&1
-if not errorlevel 1 (
-  py -3 -c "import sys; sys.exit(0 if sys.version_info>=(3,9) else 1)" >nul 2>&1
-  if not errorlevel 1 set "PY=py -3"
+if errorlevel 1 goto :findpy_plain
+for %%V in (3.12 3.11 3.13 3.10) do (
+  if not defined PY (
+    py -%%V -c "import sys" >nul 2>&1 && set "PY=py -%%V"
+  )
 )
 if defined PY exit /b 0
-python -c "import sys; sys.exit(0 if sys.version_info>=(3,9) else 1)" >nul 2>&1
+:findpy_plain
+python -c "import sys; sys.exit(0 if (3,9) <= sys.version_info[:2] <= (3,13) else 1)" >nul 2>&1
 if not errorlevel 1 set "PY=python"
 exit /b 0
 
