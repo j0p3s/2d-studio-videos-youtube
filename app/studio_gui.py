@@ -18,7 +18,21 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent
-HOME = APP_DIR.parent
+INSTALLED_HOME = Path.home() / "2D-Animation-Studio"
+
+
+def _find_home():
+    """The folder that holds growkaz-stickman-studio. Running from the setup/repo folder
+    (e.g. Desktop\\2D-Animation-Studio-Setup) still uses the installed studio."""
+    here = APP_DIR.parent
+    if (here / "growkaz-stickman-studio" / "render.mjs").exists():
+        return here
+    if (INSTALLED_HOME / "growkaz-stickman-studio" / "render.mjs").exists():
+        return INSTALLED_HOME
+    return here
+
+
+HOME = _find_home()
 STUDIO = HOME / "growkaz-stickman-studio"
 WORK = HOME / "work"
 YT_DIR = HOME / "youtube"
