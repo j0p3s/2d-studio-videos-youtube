@@ -17,6 +17,7 @@ final class VideoEncoder {
   MediaCodec codec;MediaMuxer mux;int track=-1;boolean started=false,ended=false;
   Drain(MediaCodec c,File f)throws Exception{codec=c;mux=new MediaMuxer(f.toString(),MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);}
   void pump(boolean end)throws Exception {
+   if(ended)return; // EOS may already have been consumed by the final non-blocking drain.
    MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();long deadline=System.nanoTime()+30_000_000_000L;
    while(true){check();int id=codec.dequeueOutputBuffer(info,end?10000:0);
     if(id==MediaCodec.INFO_OUTPUT_FORMAT_CHANGED){track=mux.addTrack(codec.getOutputFormat());mux.start();started=true;}
@@ -34,7 +35,7 @@ final class VideoEncoder {
    MediaFormat f=MediaFormat.createVideoFormat("video/avc",1920,1080);f.setInteger(MediaFormat.KEY_COLOR_FORMAT,MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);f.setInteger(MediaFormat.KEY_BIT_RATE,8_000_000);f.setInteger(MediaFormat.KEY_FRAME_RATE,24);f.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL,2);
    enc.configure(f,null,null,MediaCodec.CONFIGURE_FLAG_ENCODE);surface=enc.createInputSurface();enc.start();running=true;gl=new Gl(surface);ScenePainter painter=new ScenePainter();int shot=0;
    try(Drain d=new Drain(enc,out)){
-    for(int i=0;i<frames;i++){check();long time=Timeline.frameTime(i);while(shot<scenes.length()-1&&time>=scenes.getJSONObject(shot).getLong("endUs"))shot++;
+    for(int i=0;i<frames;i++){check();d.pump(false);long time=Timeline.frameTime(i);while(shot<scenes.length()-1&&time>=scenes.getJSONObject(shot).getLong("endUs"))shot++;
      JSONObject s=scenes.getJSONObject(shot);long start=s.getLong("startUs"),end=s.getLong("endUs");
      gl.draw(painter.draw(s,time/1e6,(time-start)/(double)(end-start)),time*1000);d.pump(false);if(i%24==0)progress.update(i*100/frames,"1080p render · "+enc.getName());
     }
@@ -59,7 +60,7 @@ final class VideoEncoder {
  }
  static void copy(MediaExtractor e,MediaMuxer m,int track)throws Exception {e.selectTrack(0);ByteBuffer b=ByteBuffer.allocate(8*1024*1024);MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();while(true){check();b.clear();int n=e.readSampleData(b,0);if(n<0)break;info.set(0,n,e.getSampleTime(),(e.getSampleFlags() & MediaExtractor.SAMPLE_FLAG_SYNC)!=0 ? MediaCodec.BUFFER_FLAG_KEY_FRAME : 0);m.writeSampleData(track,b,info);e.advance();}}
  static final class Gl implements AutoCloseable {
-  EGLDisplay display;EGLContext context;EGLSurface window;int program,texture;FloatBuffer vertices;
+  EGLDisplay display;EGLContext context;EGLSurface window;int program,texture;FloatBuffer vertices;boolean textureAllocated;
   Gl(Surface surface){
    display=EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY);int[] ver=new int[2];if(!EGL14.eglInitialize(display,ver,0,ver,1))throw new IllegalStateException("EGL init failed");
    EGLConfig[] configs=new EGLConfig[1];int[] n=new int[1];EGL14.eglChooseConfig(display,new int[]{EGL14.EGL_RED_SIZE,8,EGL14.EGL_GREEN_SIZE,8,EGL14.EGL_BLUE_SIZE,8,EGL14.EGL_RENDERABLE_TYPE,4,0x3142,1,EGL14.EGL_NONE},0,configs,0,1,n,0);
@@ -70,7 +71,7 @@ final class VideoEncoder {
    vertices=ByteBuffer.allocateDirect(64).order(ByteOrder.nativeOrder()).asFloatBuffer();vertices.put(new float[]{-1,-1,0,1,1,-1,1,1,-1,1,0,0,1,1,1,0}).position(0);int[] tex=new int[1];GLES20.glGenTextures(1,tex,0);texture=tex[0];GLES20.glBindTexture(3553,texture);GLES20.glTexParameteri(3553,10241,9729);GLES20.glTexParameteri(3553,10240,9729);GLES20.glTexParameteri(3553,10242,33071);GLES20.glTexParameteri(3553,10243,33071);
   }
   static int shader(int type,String source){int s=GLES20.glCreateShader(type);GLES20.glShaderSource(s,source);GLES20.glCompileShader(s);int[] ok=new int[1];GLES20.glGetShaderiv(s,GLES20.GL_COMPILE_STATUS,ok,0);if(ok[0]==0)throw new IllegalStateException(GLES20.glGetShaderInfoLog(s));return s;}
-  void draw(android.graphics.Bitmap bitmap,long ns){GLES20.glViewport(0,0,1920,1080);GLES20.glUseProgram(program);GLES20.glBindTexture(3553,texture);GLUtils.texImage2D(3553,0,bitmap,0);int p=GLES20.glGetAttribLocation(program,"p"),t=GLES20.glGetAttribLocation(program,"t");vertices.position(0);GLES20.glVertexAttribPointer(p,2,5126,false,16,vertices);GLES20.glEnableVertexAttribArray(p);vertices.position(2);GLES20.glVertexAttribPointer(t,2,5126,false,16,vertices);GLES20.glEnableVertexAttribArray(t);GLES20.glDrawArrays(5,0,4);EGLExt.eglPresentationTimeANDROID(display,window,ns);if(!EGL14.eglSwapBuffers(display,window))throw new IllegalStateException("EGL frame failed");}
+  void draw(android.graphics.Bitmap bitmap,long ns){GLES20.glViewport(0,0,1920,1080);GLES20.glUseProgram(program);GLES20.glBindTexture(3553,texture);if(!textureAllocated){GLUtils.texImage2D(3553,0,bitmap,0);textureAllocated=true;}else{GLUtils.texSubImage2D(3553,0,0,0,bitmap);}int p=GLES20.glGetAttribLocation(program,"p"),t=GLES20.glGetAttribLocation(program,"t");vertices.position(0);GLES20.glVertexAttribPointer(p,2,5126,false,16,vertices);GLES20.glEnableVertexAttribArray(p);vertices.position(2);GLES20.glVertexAttribPointer(t,2,5126,false,16,vertices);GLES20.glEnableVertexAttribArray(t);GLES20.glDrawArrays(5,0,4);EGLExt.eglPresentationTimeANDROID(display,window,ns);if(!EGL14.eglSwapBuffers(display,window))throw new IllegalStateException("EGL frame failed");}
   public void close(){EGL14.eglMakeCurrent(display,EGL14.EGL_NO_SURFACE,EGL14.EGL_NO_SURFACE,EGL14.EGL_NO_CONTEXT);EGL14.eglDestroySurface(display,window);EGL14.eglDestroyContext(display,context);EGL14.eglTerminate(display);}
  }
 }
