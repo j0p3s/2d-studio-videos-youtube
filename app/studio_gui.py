@@ -18,7 +18,7 @@ import traceback
 import webbrowser
 from ai_providers import PROVIDERS, cli_command, run_agent, portable_prompt
 from language_policy import (ENGLISH_VOICES, english_voice, english_prompt, narration_hash,
-                             normalize_narration_prompt, migrate_speech_settings)
+                             normalize_narration_prompt, migrate_speech_settings, verify_english_recording)
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -1456,15 +1456,8 @@ class Studio(ctk.CTk):
         if f:
             text, d = self._save_narration()
             def work():
-                from faster_whisper import WhisperModel
-                from faster_whisper.audio import decode_audio
                 self.prog(0.1, "Checking that the recording is English")
-                samples = decode_audio(f, sampling_rate=16000)[:30 * 16000]
-                model = WhisperModel("small", device="cpu", compute_type="int8")
-                segments, info = model.transcribe(samples, vad_filter=True, beam_size=1)
-                spoken = list(segments)
-                if not spoken or info.language != "en" or info.language_probability < 0.6:
-                    raise RuntimeError("Please use a clearly spoken English recording, or generate Microsoft Neural speech.")
+                verify_english_recording(f, ENV, NO_WINDOW)
                 return text if self.s.get("narration_en_hash") == narration_hash(text) else self.ask_ai(normalize_narration_prompt(text), cwd=HOME)
             def done(narration):
                 (d / "script.txt").write_text(narration + "\n", encoding="utf-8")
