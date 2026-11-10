@@ -1042,8 +1042,11 @@ class Studio(ctk.CTk):
             chunks.append(" ".join(current))
         return chunks
 
+    VOICE_WORKERS = 3   # passages voiced at the same time (Edge streams ~real-time, so this is ~3x faster)
+
     def _make_voice_edge(self, text, d, out, voice, rate):
-        """Edge neural voice, passage by passage, cached, 3 tries each (as in reddit-video-generator)."""
+        """Edge neural voice in passages (as in reddit-video-generator): cached, 3 tries each,
+        VOICE_WORKERS passages at once, joined in order."""
         import asyncio
         import edge_tts
         rate_s = f"{rate:+d}%"
@@ -1052,34 +1055,57 @@ class Studio(ctk.CTk):
             raise RuntimeError("The narration is empty.")
         cache = d / "voice_parts"
         cache.mkdir(exist_ok=True)
-        files = []
+        n = len(parts)
+        files = [cache / (hashlib.sha256((voice + "\n" + rate_s + "\n" + p).encode()).hexdigest()[:24] + ".mp3")
+                 for p in parts]
+        state = {"done": sum(1 for f in files if f.exists() and f.stat().st_size > 0), "retries": 0}
 
-        async def download(part, dest):
-            await asyncio.wait_for(edge_tts.Communicate(part, voice=voice, rate=rate_s).save(str(dest)), timeout=180)
-        for i, part in enumerate(parts):
-            self.prog(i / len(parts), f"Voice passage {i + 1}/{len(parts)}")
-            mp3 = cache / (hashlib.sha256((voice + "\n" + rate_s + "\n" + part).encode()).hexdigest()[:24] + ".mp3")
-            for attempt in range(3):
-                self.check_cancel()
-                partial = mp3.with_suffix(".partial.mp3")
-                try:
-                    if not mp3.exists() or mp3.stat().st_size == 0:
-                        asyncio.run(download(part, partial))
+        def report():
+            extra = f" · {state['retries']} retried" if state["retries"] else ""
+            self.prog(state["done"] / n * 0.95, f"voice passages {state['done']}/{n} done "
+                                                f"({min(self.VOICE_WORKERS, n - state['done'])} at a time){extra}")
+
+        async def one(i, sem):
+            mp3 = files[i]
+            if mp3.exists() and mp3.stat().st_size > 0:
+                return
+            async with sem:
+                for attempt in range(3):
+                    self.check_cancel()
+                    partial = mp3.with_name(mp3.stem + ".partial.mp3")
+                    try:
+                        await asyncio.wait_for(edge_tts.Communicate(parts[i], voice=voice, rate=rate_s)
+                                               .save(str(partial)), timeout=180)
                         if not partial.is_file() or partial.stat().st_size == 0:
                             raise RuntimeError("no speech received")
                         os.replace(partial, mp3)
-                    break
-                except Exception as exc:
-                    partial.unlink(missing_ok=True)
-                    mp3.unlink(missing_ok=True)
-                    if attempt == 2:
-                        raise RuntimeError(f"The voice service failed on passage {i + 1} of {len(parts)} after 3 tries "
-                                           f"({exc}).\n\nPassage starts: “{part[:140]}…”\n\nCheck your internet and try again "
-                                           "— finished passages are cached, so it continues where it stopped.")
-                    self.prog(i / len(parts), f"Voice passage {i + 1}/{len(parts)} — retry {attempt + 2}/3")
-                    time.sleep(attempt + 1)
-            files.append(mp3)
-        self.prog(0.97, "Joining passages")
+                        break
+                    except Exception as exc:
+                        partial.unlink(missing_ok=True)
+                        if self._cancel:
+                            raise RuntimeError("Stopped.")
+                        if attempt == 2:
+                            raise RuntimeError(f"The voice service failed on passage {i + 1} of {n} after 3 tries "
+                                               f"({exc}).\n\nPassage starts: “{parts[i][:140]}…”\n\nCheck your internet "
+                                               "and try again — finished passages are cached, so it continues where it stopped.")
+                        state["retries"] += 1
+                        report()
+                        await asyncio.sleep(attempt + 1)
+            state["done"] += 1
+            report()
+
+        async def run_all():
+            sem = asyncio.Semaphore(self.VOICE_WORKERS)
+            tasks = [asyncio.create_task(one(i, sem)) for i in range(n)]
+            try:
+                await asyncio.gather(*tasks)
+            except BaseException:
+                for t in tasks:
+                    t.cancel()
+                raise
+        report()
+        asyncio.run(run_all())
+        self.prog(0.97, "joining passages")
         return self._join_mp3(files, out)
 
     def _join_mp3(self, files, out):
