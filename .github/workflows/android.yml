@@ -1,0 +1,25 @@
+name: Android APK
+on:
+  workflow_dispatch:
+  push:
+    paths: ['Adnroid-App/**', '.github/workflows/android.yml']
+  pull_request:
+    paths: ['Adnroid-App/**', '.github/workflows/android.yml']
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: chmod +x gradlew && ./gradlew testDebugUnitTest assembleDebug lintDebug
+        working-directory: Adnroid-App
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StudioAndroid-debug
+          path: Adnroid-App/app/build/outputs/apk/debug/app-debug.apk
