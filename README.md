@@ -1,6 +1,8 @@
 # 2D Animation Studio (Windows)
 
-A one-click setup and desktop app for making faceless, animated, stick-figure YouTube videos with Claude Code, then uploading them. It does the same thing as the Grow With Kaz tutorial without the copy-paste steps.
+An independent Android 15+ prototype is in [Adnroid-App](Adnroid-App/README.md): native 1080p/24 fps rendering, up to 10 minutes, free English Microsoft Neural narration through edge-tts (no Azure key), an exportable diagnostic/crash-log menu and Gemini/OpenAI/Claude APIs. See its README for credentials, device benchmarks and differences from the desktop pipeline.
+
+A one-click setup and desktop app for making faceless, animated, stick-figure YouTube videos with Claude Code, OpenAI Codex or Gemini, then uploading them. It does the same thing as the Grow With Kaz tutorial without the copy-paste steps.
 
 ## Install
 1. Double-click **`Install-2D-Studio.cmd`**. It installs whatever is missing:
@@ -10,7 +12,25 @@ A one-click setup and desktop app for making faceless, animated, stick-figure Yo
    - Python packages: numpy, scipy, faster-whisper, edge-tts, customtkinter, Pillow and the YouTube API client
    - Claude Code skills: `make-2d-video`, `new-video`, `render-video`, `video-sound`, `video-styles` and **`scriptforge`** (the "2D Niche Prompt" PDF turned into a skill)
 2. The app is installed to `%USERPROFILE%\2D-Animation-Studio`, and the installer adds a **"2D Animation Studio"** shortcut to your desktop.
-3. The first time you open the app, go to **Setup → Log in to Claude** and sign in once.
+3. In **Setup**, choose your providers for **Ideas & script** and **Animation & character designs** independently. Claude remains the default. Sign in to each provider you select.
+
+## AI providers
+
+| Provider | Setup | Integration |
+|---|---|---|
+| Claude | **Log in to Claude** | Existing Claude Code workflow and skills. |
+| OpenAI (Codex) | **Install OpenAI (Codex)**, then **Sign in: OpenAI (Codex)** | Codex CLI with its saved ChatGPT/API authentication. |
+| Gemini | **Install Gemini**, then **Sign in: Gemini** | Gemini CLI with its own Google/API authentication. |
+
+Models are optional: leave the field blank to use the CLI default. Provider and model selections are saved for the next run; each active job keeps the selections it started with. Voiceover, GPU rendering and YouTube upload use the same pipeline for every provider. CLI authentication is managed by the vendor; the app does not copy credentials into its settings.
+
+All generated video content is **English only**, regardless of the language used to give instructions: scripts, narration, metadata, subtitles and on-screen text. This applies to Claude, Codex and Gemini, including revisions and interactive animation prompts. Imported/edited scripts are normalized into English. Edited narration is translated before speech generation when needed; unchanged English narration is preserved.
+
+Speech generation always uses **Microsoft Neural (Edge)** with an English voice; the default is `en-US-AndrewMultilingualNeural`, reading English narration. English US, UK and Australian voice options remain available. Saved Portuguese voices are replaced with the English default, and saved ElevenLabs engine selections reset to Microsoft. ElevenLabs is not offered in the voice-generation UI. Imported recordings are checked for English speech in the first 30 seconds using Whisper; uncertain or non-English recordings are rejected. Old unverified/non-English voice references are cleared from the current pipeline so Auto regenerates speech; the media files remain on disk. Restart the GUI after updating.
+
+Codex and Gemini receive the GrowKaz skill and reference paths explicitly, so animation does not depend on Claude Code being installed. Text tasks request text-only operation in read-only/plan mode. Animation uses Codex workspace-write or Gemini auto-edit; commands requiring extra permission can fail in headless mode. **Full auto** enables the selected agent's unrestricted mode for unattended local rendering. Gemini trusts the current working folder for that invocation. Final publishing still requires the app's Publish action.
+
+The installer provisions the shared GrowKaz skills under `~/.claude/skills` for all three providers. For manual updates, include `app/ai_providers.py` alongside `studio_gui.py`. Run adapter tests with `python -m unittest discover -s app -p test_ai_providers.py`. A missing login, unavailable model or exhausted quota is reported as an error; the app does not silently substitute another provider.
 
 You can run the installer again at any time. It skips anything already installed and never touches your `projects\` folder.
 
@@ -21,9 +41,9 @@ For a manual app update, copy the changed files from `app` into `%USERPROFILE%\2
 ## Using the app
 | Step | What it does |
 |---|---|
-| **① Script** | Pick a niche and a length (Shorts up to 12 min) to get 10 ideas from ScriptForge. Pick one and you get the full script, alternative titles, tags, a description and thumbnail text. Type edit requests to revise it. |
-| **② Voiceover** | Uses free Microsoft Edge neural voices, ElevenLabs (paste your API key, then *Load voices*), or your own recording. |
-| **③ Animate** | Claude Code runs the GrowKaz pipeline: Whisper timestamps, a shot plan, code-drawn 2D/3D scenes, music, sound effects and the final MP4. Long videos are built in several *parts*, one Claude pass per section. **Suggest character styles** renders 4 character looks for you to choose from. **Open in Claude Code** lets you run it interactively instead. |
+| **① Script** | Pick a niche and a length (Shorts up to 12 min) to get 10 ideas from ScriptForge through your selected script provider. Pick one and you get the full script, alternative titles, tags, a description and thumbnail text. Type edit requests to revise it. |
+| **② Voiceover** | Uses English Microsoft Neural voices, including Andrew, Guy, Aria and Jenny, for every AI provider. You can also import a recording verified as English. |
+| **③ Animate** | Your selected animation agent runs the GrowKaz pipeline: Whisper timestamps, a shot plan, code-drawn 2D/3D scenes, music, sound effects and the final MP4. Long videos are built in several *parts*, one agent pass per section. **Suggest character styles** renders 4 character looks for you to choose from. **Open animation agent** lets you run it interactively instead. |
 | **④ Upload** | Makes a thumbnail from a video frame with big text on it, fills in the title, description and tags from the script, and uploads to YouTube (private, unlisted, public or scheduled). |
 
 ## YouTube setup (once)
@@ -42,5 +62,5 @@ Go to **Upload → YouTube setup** and follow the steps there. You create a free
 - Video encoding automatically tries NVIDIA NVENC, Intel Quick Sync, then AMD AMF using a real FFmpeg probe at the output resolution. If none works, it uses CPU x264. If a GPU fails during rendering (including concurrent encoder session limits), it retries all parts on CPU before joining them. Render logs show the selected encoder.
 - Chrome uses its available graphics acceleration (and requests the high-performance GPU on Windows). Frame stepping, audio processing and scene logic remain on CPU; final assembly copies the encoded video without re-encoding. Video capture defaults to JPEG; still images remain PNG.
 - To force CPU encoding, set `STUDIO_ENCODER=cpu` before launching the app. Renderer overrides: `--encoder auto|cpu|gpu|nvenc|qsv|amf`; `--gl swiftshader` forces software drawing. GPU quality settings approximate x264 quality and can produce different file sizes.
-- "Full auto" on the Animate page runs Claude Code with `--dangerously-skip-permissions`. Leave it off unless a run gets stuck on permissions.
+- **Full auto** uses Claude's `--dangerously-skip-permissions`, Codex's `--dangerously-bypass-approvals-and-sandbox`, or Gemini's `yolo` approval mode, according to the selected animation provider.
 - If the app won't open, check `%USERPROFILE%\2D-Animation-Studio\gui_error.log`.
