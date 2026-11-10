@@ -1,6 +1,6 @@
 # 2D Animation Studio (Windows)
 
-An independent Android 15+ prototype is in [Adnroid-App](Adnroid-App/README.md): native 1080p/24 fps rendering, up to 10 minutes, English Microsoft Neural narration and Gemini/OpenAI/Claude APIs. See its README for credentials, device benchmarks and differences from the desktop pipeline.
+An independent Android 15+ prototype is in [Adnroid-App](Adnroid-App/README.md): native 1080p/24 fps rendering, up to 10 minutes, free English Microsoft Neural narration through edge-tts (no Azure key), an exportable diagnostic/crash-log menu and Gemini/OpenAI/Claude APIs. See its README for credentials, device benchmarks and differences from the desktop pipeline.
 
 A one-click setup and desktop app for making faceless, animated, stick-figure YouTube videos with Claude Code, OpenAI Codex or Gemini, then uploading them. It does the same thing as the Grow With Kaz tutorial without the copy-paste steps.
 
