@@ -10,23 +10,32 @@ rem  Installs: Git, Node.js LTS, Python 3.12, FFmpeg, Claude Code CLI,
 rem            GrowKaz Stickman Studio (three.js + Playwright Chromium),
 rem            Python libs (numpy, scipy, faster-whisper, edge-tts, YouTube API,
 rem            customtkinter, pillow), the plugin skills + ScriptForge skill,
-rem            and a desktop shortcut for the GUI.
+rem            all studio settings beside this installer.
 rem  Safe to run again: it skips what is already installed and never touches
 rem  your projects\ folder.
 rem ==========================================================================
 
 set "SRC=%~dp0"
 if "%SRC:~-1%"=="\" set "SRC=%SRC:~0,-1%"
-set "HOME2D=%USERPROFILE%\2D-Animation-Studio"
+set "HOME2D=%SRC%"
 set "STUDIO=%HOME2D%\growkaz-stickman-studio"
-set "SKILLS=%USERPROFILE%\.claude\skills"
+set "SKILLS=%HOME2D%\.claude\skills"
+set "npm_config_prefix=%HOME2D%\.tools"
+set "npm_config_cache=%HOME2D%\.cache\npm"
+set "PIP_CACHE_DIR=%HOME2D%\.cache\pip"
+set "PLAYWRIGHT_BROWSERS_PATH=%HOME2D%\.cache\playwright"
+set "HF_HOME=%HOME2D%\.cache\huggingface"
+set "TEMP=%HOME2D%\.runtime\tmp"
+set "TMP=%TEMP%"
+if not exist "%TEMP%" mkdir "%TEMP%"
+set "PATH=%HOME2D%\.tools;%PATH%"
 
 echo.
 echo  ===========================================================
 echo     2D ANIMATION STUDIO  -  one-click installer
 echo  ===========================================================
 echo   Install folder : %HOME2D%
-echo   Shared skills  : %SKILLS%
+echo   Local skills  : %SKILLS%
 echo.
 echo   This will install (if missing): Git, Node.js, Python, FFmpeg,
 echo   Claude Code, Chromium (headless), and about 1 GB of tools.
@@ -57,7 +66,7 @@ set "PY="
 call :findpy
 if not defined PY (
   echo   installing Python 3.12 ...
-  winget install --id Python.Python.3.12 -e --silent --accept-package-agreements --accept-source-agreements --override "/quiet InstallAllUsers=0 PrependPath=1 Include_launcher=1 Include_tcltk=1 Include_pip=1"
+  winget install --id Python.Python.3.12 -e --silent --accept-package-agreements --accept-source-agreements --override "/quiet InstallAllUsers=0 PrependPath=0 Include_launcher=1 Include_tcltk=1 Include_pip=1"
   call :refresh
   call :findpy
 )
@@ -72,15 +81,8 @@ rem ---------- 3. Claude Code --------------------------------------------------
 call :banner "3/7  Claude Code CLI"
 call :findclaude
 if not defined CLAUDE_OK (
-  echo   installing Claude Code - official installer ...
-  powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://claude.ai/install.ps1 | iex"
-  call :refresh
-  call :findclaude
-)
-if not defined CLAUDE_OK (
-  echo   trying npm install instead ...
-  call npm install -g @anthropic-ai/claude-code
-  call :refresh
+  echo   installing Claude Code into the local .tools folder ...
+  call npm install --prefix "%HOME2D%\.tools" -g @anthropic-ai/claude-code
   call :findclaude
 )
 if defined CLAUDE_OK (echo   [ok] Claude Code found) else (echo   [!] Claude Code not found - the GUI Setup page can retry this.)
@@ -104,13 +106,9 @@ if not exist "%EXT%\skills\make-2d-video\kit\render.mjs" (
   exit /b 1
 )
 
-robocopy "%SRC%\app" "%HOME2D%\app" /E /NFL /NDL /NJH /NJS /NP >nul
-if not exist "%HOME2D%\plugin" mkdir "%HOME2D%\plugin"
-copy /y "%PLUG%" "%HOME2D%\plugin\GrowKaz_Stickman.plugin" >nul
-copy /y "%SRC%\Launch-2D-Studio.cmd" "%HOME2D%\Launch-2D-Studio.cmd" >nul
-copy /y "%~f0" "%HOME2D%\Install-2D-Studio.cmd" >nul 2>&1
-if exist "%SRC%\README.md" copy /y "%SRC%\README.md" "%HOME2D%\README.md" >nul
-if exist "%SRC%\2D Niche Prompt for Claude.pdf" copy /y "%SRC%\2D Niche Prompt for Claude.pdf" "%HOME2D%\" >nul
+rem The app already lives beside this installer; do not copy it to the user profile.
+%PY% "%HOME2D%\app\portable_paths.py"
+if errorlevel 1 exit /b 1
 
 rem studio kit (never overwrites projects\)
 robocopy "%EXT%\skills\make-2d-video\kit" "%STUDIO%" /E /XD projects /NFL /NDL /NJH /NJS /NP >nul
@@ -119,7 +117,7 @@ rem let the renderer use installed Chrome/Edge when Playwright's Chromium downlo
 %PY% "%HOME2D%\app\patch_kit.py" "%STUDIO%"
 echo   [ok] studio kit  -^> %STUDIO%
 
-rem Claude Code skills (the plugin's 5 skills + ScriptForge)
+rem Local Claude Code skills (the plugin's 5 skills + ScriptForge)
 if not exist "%SKILLS%" mkdir "%SKILLS%"
 for %%S in (make-2d-video new-video render-video video-sound video-styles) do (
   robocopy "%EXT%\skills\%%S" "%SKILLS%\%%S" /E /NFL /NDL /NJH /NJS /NP >nul
@@ -133,31 +131,28 @@ call :banner "5/7  three.js, Playwright and headless Chromium"
 pushd "%STUDIO%"
 call npm install --no-fund --no-audit
 echo.
-echo   Downloading headless Chromium. If it sits at 100%% for more than 3 minutes, antivirus is
-echo   blocking the unpack: press Ctrl+C, answer N, and the studio will use your Chrome/Edge instead.
-call npx --yes playwright install chromium
+echo   Using installed Chrome/Edge. Any browser download uses this folder's .cache.
+rem Installed Chrome/Edge is preferred; no shared browser download.
 popd
 
 rem ---------- 6. Python packages ----------------------------------------------
 call :banner "6/7  Python packages"
-%PY% -m pip install --upgrade pip --quiet
+%PY% -m venv --system-site-packages "%HOME2D%\.venv"
+if errorlevel 1 exit /b 1
+set PY="%HOME2D%\.venv\Scripts\python.exe"
 %PY% -m pip install --upgrade numpy scipy faster-whisper edge-tts customtkinter pillow google-api-python-client google-auth-oauthlib google-auth-httplib2
-rem remember which Python the app must use (the launcher reads this)
-%PY% -c "import sys, pathlib; pathlib.Path(r'%HOME2D%\python.txt').write_text(sys.executable)"
+%PY% -c "import sys, pathlib; pathlib.Path(r'%HOME2D%\python.txt').write_text(r'.venv\Scripts\python.exe')"
 
-rem ---------- 7. Check + shortcut ---------------------------------------------
+rem ---------- 7. Check ---------------------------------------------
 call :banner "7/7  Checking everything"
 pushd "%STUDIO%"
 %PY% tools\verify_kit.py
 %PY% tools\doctor.py
 popd
 
-powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Desktop')+'\2D Animation Studio.lnk');$s.TargetPath='%HOME2D%\Launch-2D-Studio.cmd';$s.WorkingDirectory='%HOME2D%';$s.IconLocation='%SystemRoot%\System32\imageres.dll,186';$s.WindowStyle=7;$s.Save()"
-echo   [ok] Desktop shortcut "2D Animation Studio" created
-
 echo.
 echo  ===========================================================
-echo    DONE!  Open "2D Animation Studio" from your desktop.
+echo    DONE!  Run Launch-2D-Studio.cmd in this folder.
 echo.
 echo    First time only:
 echo     - Setup page ^> choose Claude, OpenAI Codex or Gemini and sign in.
@@ -215,5 +210,5 @@ exit /b 0
 
 :refresh
 rem reload PATH from the registry so freshly installed tools are found
-for /f "usebackq delims=" %%P in (`powershell -NoProfile -Command "[Environment]::GetEnvironmentVariable('Path','Machine')+';'+[Environment]::GetEnvironmentVariable('Path','User')"`) do set "PATH=%%P;%USERPROFILE%\.local\bin"
+for /f "usebackq delims=" %%P in (`powershell -NoProfile -Command "[Environment]::GetEnvironmentVariable('Path','Machine')+';'+[Environment]::GetEnvironmentVariable('Path','User')"`) do set "PATH=%HOME2D%\.tools;%%P;%USERPROFILE%\.local\bin"
 exit /b 0

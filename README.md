@@ -11,7 +11,7 @@ A one-click setup and desktop app for making faceless, animated, stick-figure Yo
    - the **GrowKaz Stickman Studio**, taken from `plugin\GrowKaz_Stickman.plugin`, along with three.js, Playwright and a headless Chromium
    - Python packages: numpy, scipy, faster-whisper, edge-tts, customtkinter, Pillow and the YouTube API client
    - Claude Code skills: `make-2d-video`, `new-video`, `render-video`, `video-sound`, `video-styles` and **`scriptforge`** (the "2D Niche Prompt" PDF turned into a skill)
-2. The app is installed to `%USERPROFILE%\2D-Animation-Studio`, and the installer adds a **"2D Animation Studio"** shortcut to your desktop.
+2. Everything owned by the studio lives beside `Install-2D-Studio.cmd` and `Launch-2D-Studio.cmd`: settings, YouTube credentials, projects, AI settings, skills, caches and the local Python environment. Keep this folder in a writable location.
 3. In **Setup**, choose your providers for **Ideas & script** and **Animation & character designs** independently. Claude remains the default. Sign in to each provider you select.
 
 ## AI providers
@@ -30,11 +30,11 @@ Speech generation always uses **Microsoft Neural (Edge)** with an English voice;
 
 Codex and Gemini receive the GrowKaz skill and reference paths explicitly, so animation does not depend on Claude Code being installed. Text tasks request text-only operation in read-only/plan mode. Animation uses Codex workspace-write or Gemini auto-edit; commands requiring extra permission can fail in headless mode. **Full auto** enables the selected agent's unrestricted mode for unattended local rendering. Gemini trusts the current working folder for that invocation. Final publishing still requires the app's Publish action.
 
-The installer provisions the shared GrowKaz skills under `~/.claude/skills` for all three providers. For manual updates, include `app/ai_providers.py` alongside `studio_gui.py`. Run adapter tests with `python -m unittest discover -s app -p test_ai_providers.py`. A missing login, unavailable model or exhausted quota is reported as an error; the app does not silently substitute another provider.
+The installer provisions the local GrowKaz skills under `.claude/skills` beside the launchers for all three providers. For manual updates, include `app/ai_providers.py` alongside `studio_gui.py`. Run adapter tests with `python -m unittest discover -s app -p test_ai_providers.py`. A missing login, unavailable model or exhausted quota is reported as an error; the app does not silently substitute another provider.
 
 You can run the installer again at any time. It skips anything already installed and never touches your `projects\` folder.
 
-For a manual app update, copy the changed files from `app` into `%USERPROFILE%\2D-Animation-Studio\app`, including `video_encoder.mjs` alongside `patch_kit.py`. Run the installed patcher with the installed `growkaz-stickman-studio` directory as its argument. Restart the GUI after updating Python files. The installer performs the copy and patch steps automatically.
+For a manual app update, copy the changed files from `app` into `.\app`, including `video_encoder.mjs` alongside `patch_kit.py`. Run the installed patcher with the installed `growkaz-stickman-studio` directory as its argument. Restart the GUI after updating Python files. The installer performs the copy and patch steps automatically.
 
 > Remotion, which the tutorial installs, isn't needed. The plugin draws every frame with canvas and three.js in headless Chromium and encodes with FFmpeg.
 
@@ -49,12 +49,12 @@ For a manual app update, copy the changed files from `app` into `%USERPROFILE%\2
 ## YouTube setup (once)
 Go to **Upload → YouTube setup** and follow the steps there. You create a free Google Cloud project, enable the *YouTube Data API v3*, create an OAuth **Desktop app** client, and choose its `client_secret.json`. Then click **Connect**. Until Google verifies your app, YouTube may force uploads to private; you can make them public in YouTube Studio.
 
-**Already have a `token.json`?** Put it in `%USERPROFILE%\2D-Animation-Studio\youtube\token.json` and restart the app. It needs the `youtube.upload` scope and must contain `refresh_token`, `client_id`, `client_secret` and `token_uri`. If uploads fail, put your `client_secret.json` in the same folder, delete `token.json`, and click **Connect** again. Never commit either file (`.gitignore` already excludes them).
+**Already have a `token.json`?** Put it in `.\youtube\token.json` and restart the app. It needs the `youtube.upload` scope and must contain `refresh_token`, `client_id`, `client_secret` and `token_uri`. If uploads fail, put your `client_secret.json` in the same folder, delete `token.json`, and click **Connect** again. Never commit either file (`.gitignore` already excludes them).
 
 ## Troubleshooting
 - **Installer sits at "Downloading Chromium … 100%" and doesn't move.** Antivirus is blocking the unpack of `chrome.dll`. Press **Ctrl+C**, answer **N**, and let the installer finish. `app/patch_kit.py` (applied by the installer) makes the renderer use your installed **Chrome or Edge** instead, and the studio's doctor accepts that.
 - **faster-whisper / `av` fails to install.** Very new Pythons (3.14+) have no packages for it yet. The installer prefers Python 3.12, 3.11, 3.13 or 3.10 (installing 3.12 if none is present), saves the choice in `python.txt`, and the launcher uses it.
-- **Setup shows "GrowKaz studio kit: missing"** when the app is started from the repo folder: update to the latest version. The app now falls back to the installed studio in `%USERPROFILE%\2D-Animation-Studio`.
+- **Setup shows "GrowKaz studio kit: missing"** when the app is started from the repo folder: update to the latest version. Run the installer beside the launcher to provision the local studio kit.
 - **"Log in to Claude" opens a window that says the program isn't recognized**: fixed in the latest version. Update `app\studio_gui.py`.
 - **Claude says "Not logged in"**: use **Setup → Log in to Claude**, choose *Claude account with subscription*, and sign in in the browser.
 
@@ -63,4 +63,9 @@ Go to **Upload → YouTube setup** and follow the steps there. You create a free
 - Chrome uses its available graphics acceleration (and requests the high-performance GPU on Windows). Frame stepping, audio processing and scene logic remain on CPU; final assembly copies the encoded video without re-encoding. Video capture defaults to JPEG; still images remain PNG.
 - To force CPU encoding, set `STUDIO_ENCODER=cpu` before launching the app. Renderer overrides: `--encoder auto|cpu|gpu|nvenc|qsv|amf`; `--gl swiftshader` forces software drawing. GPU quality settings approximate x264 quality and can produce different file sizes.
 - **Full auto** uses Claude's `--dangerously-skip-permissions`, Codex's `--dangerously-bypass-approvals-and-sandbox`, or Gemini's `yolo` approval mode, according to the selected animation provider.
-- If the app won't open, check `%USERPROFILE%\2D-Animation-Studio\gui_error.log`.
+- If the app won't open, check `.\gui_error.log`.
+
+## Portable configuration
+The launcher copies missing settings, YouTube credentials, work and the kit from the old `%USERPROFILE%\2D-Animation-Studio` installation on first use, rebasing saved project paths. Existing destination files win. The old installation is retained as a backup; use this folder's launcher going forward.
+
+AI logins are scoped to this installation (`.claude`, `.codex`, `.runtime/home/.gemini`); sign in again from Setup. Existing personal AI configurations are not moved or overwritten. Cache and CLI path variables apply only to the studio's processes, with no `setx` or Windows environment changes. Shared prerequisite programs (Python, Node, Git, FFmpeg and installed browsers) may still be used; new Python dependencies and npm AI packages install locally. Secrets and generated content are gitignored.

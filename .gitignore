@@ -6,3 +6,13 @@ youtube/
 client_secret*.json
 token.json
 gui_error.log
+
+# Portable installation: private configuration, credentials, caches and generated media
+.claude/
+.codex/
+.runtime/
+.cache/
+.tools/
+.venv/
+growkaz-stickman-studio/
+python.txt
