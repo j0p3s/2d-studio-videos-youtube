@@ -1,11 +1,14 @@
-"""patch_kit.py - make the GrowKaz studio work without Playwright's bundled Chromium.
+"""patch_kit.py - browser compatibility, progress reporting and adaptive GPU encoding.
 
 On some PCs antivirus freezes `npx playwright install chromium` while it unpacks chrome.dll.
 This patch (safe to run many times) makes:
   - render.mjs fall back to installed Google Chrome or Microsoft Edge when the bundled
     Chromium is missing (override with env PW_CHANNEL=chrome|msedge),
   - tools/doctor.py count Chrome/Edge as a valid browser, so its --install step does
-    not retry the download that freezes.
+    not retry the download that freezes,
+  - FFmpeg probe NVIDIA/Intel/AMD encoding at output resolution, with CPU retry on failure.
+
+Keep video_encoder.mjs alongside this file; it is copied into the patched kit.
 
 Usage:  python patch_kit.py <path to growkaz-stickman-studio>
 """
@@ -81,7 +84,8 @@ if CMARK not in src:
 else:
     print("render.mjs empty-dirs already patched")
 
-# GPU where it helps, CPU where it belongs:
+# Legacy NVIDIA patch, followed below by the adaptive encoder upgrade. Keeping this
+# migration step supports both original plugin archives and already-patched installs.
 #  - encoding: NVIDIA NVENC (h264_nvenc) when a one-frame probe works and the parallel encodes fit
 #    the GeForce limit of 8 sessions; otherwise libx264 on the CPU exactly as before.
 #    Override with --encoder cpu|gpu or env STUDIO_ENCODER=cpu|gpu.

@@ -14,6 +14,8 @@ A one-click setup and desktop app for making faceless, animated, stick-figure Yo
 
 You can run the installer again at any time. It skips anything already installed and never touches your `projects\` folder.
 
+For a manual app update, copy the changed files from `app` into `%USERPROFILE%\2D-Animation-Studio\app`, including `video_encoder.mjs` alongside `patch_kit.py`. Run the installed patcher with the installed `growkaz-stickman-studio` directory as its argument. Restart the GUI after updating Python files. The installer performs the copy and patch steps automatically.
+
 > Remotion, which the tutorial installs, isn't needed. The plugin draws every frame with canvas and three.js in headless Chromium and encodes with FFmpeg.
 
 ## Using the app
