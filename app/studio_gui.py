@@ -530,13 +530,17 @@ class Studio(ctk.CTk):
     def new_video(self):
         if self.s and not messagebox.askyesno("New video", "Start a new video? (The current one stays saved in work\\)"):
             return
+        self._reset_project()
+        self.show("script")
+
+    def _reset_project(self):
+        """Forget the current video (its files stay in work\\) so the next one starts from scratch."""
         self.s = {}
         self.ideas = []
         self.save_state()
         self.txt_script.delete("1.0", "end")
         self._render_ideas()
         self._clear_upload_page()
-        self.show("script")
 
     def _clear_upload_page(self):
         for e in (self.ent_video, self.ent_title, self.ent_tags, self.ent_thumb_text, self.ent_sched):
@@ -553,10 +557,15 @@ class Studio(ctk.CTk):
         if self.busy:
             messagebox.showinfo("Auto", "A task is running. Wait for it or press Stop first.")
             return
+        start, fresh = self._auto_start(), False
+        if start != "ideas":   # there is work in progress: new video, or carry on with this one?
+            choice = self._ask_auto_mode(start)
+            if choice is None:
+                return
+            fresh = choice == "fresh"
+            if fresh:
+                start = "ideas"   # the project is only cleared once the summary below is confirmed
         s = self.s
-        have = lambda k: bool(s.get(k)) and Path(s[k]).exists()
-        start = ("thumbnail" if have("video") else "animation" if have("voice") else
-                 "voiceover" if s.get("script") else "script" if self.ideas else "ideas")
         todo = self.AUTO_STEPS[self.AUTO_STEPS.index(start):]
         main, sub = self._niche()
         self._sync_animate_page()
@@ -572,9 +581,57 @@ class Studio(ctk.CTk):
                    "The animation step can take a long time. Start?")
         if not messagebox.askyesno("⚡ Auto", summary):
             return
+        if fresh:
+            self._reset_project()
+            self._sync_animate_page()
         self._auto, self._auto_tries = True, {}
         self.btn_auto.configure(text="⚡ Auto running…", state="disabled")
         self._auto_step()
+
+    def _auto_start(self):
+        """The first Auto step still to do for the current project."""
+        s = self.s
+        have = lambda k: bool(s.get(k)) and Path(s[k]).exists()
+        return ("thumbnail" if have("video") else "animation" if have("voice") else
+                "voiceover" if s.get("script") else "script" if self.ideas else "ideas")
+
+    def _ask_auto_mode(self, start):
+        """Ask whether Auto starts a brand-new video or continues the current one.
+        Returns "fresh", "continue" or None (cancelled)."""
+        done = self.AUTO_STEPS[:self.AUTO_STEPS.index(start)]
+        title = self.s.get("title") or "(untitled — ideas only)"
+        win = ctk.CTkToplevel(self)
+        win.title("⚡ Auto")
+        win.geometry("520x300")
+        win.resizable(False, False)
+        win.transient(self)
+        win.configure(fg_color=CARD_BG)
+        result = {"v": None}
+
+        def pick(v):
+            result["v"] = v
+            win.destroy()
+
+        ctk.CTkLabel(win, text="What should ⚡ Auto make?", font=ctk.CTkFont(size=18, weight="bold")
+                     ).pack(anchor="w", padx=20, pady=(18, 6))
+        ctk.CTkLabel(win, text=f"Current project: {title}\n"
+                               f"Done: {', '.join(done) or 'nothing yet'}   ·   Next: {start}",
+                     justify="left", wraplength=480, text_color="#9aa3b2").pack(anchor="w", padx=20)
+        ctk.CTkButton(win, text="✨  Start fresh — new ideas, new script, the whole process", height=40,
+                      anchor="w", command=lambda: pick("fresh")).pack(fill="x", padx=20, pady=(18, 6))
+        ctk.CTkButton(win, text=f"▶  Continue this project — from {start}", height=40, anchor="w",
+                      fg_color="#1d222b", hover_color="#272d38", command=lambda: pick("continue")
+                      ).pack(fill="x", padx=20, pady=6)
+        ctk.CTkLabel(win, text="Starting fresh keeps the current project saved in work\\.",
+                     text_color="#6b7380").pack(anchor="w", padx=20, pady=(4, 0))
+        ctk.CTkButton(win, text="Cancel", width=90, fg_color="transparent", border_width=1,
+                      border_color="#2b313c", command=lambda: pick(None)).pack(anchor="e", padx=20, pady=10)
+        win.protocol("WM_DELETE_WINDOW", lambda: pick(None))
+        win.bind("<Escape>", lambda e: pick(None))
+        win.after(50, win.grab_set)   # modal; CTkToplevel needs a moment before grab works
+        win.after(60, win.focus_force)
+        self.wait_window(win)
+        return result["v"]
 
     def _auto_stop(self, msg=None):
         self._auto, self._chain = False, None
