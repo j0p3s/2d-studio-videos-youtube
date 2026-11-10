@@ -522,8 +522,10 @@ class Studio(ctk.CTk):
                                   "irm https://claude.ai/install.ps1 | iex; Write-Host 'Now type: claude'"],
                                  creationflags=subprocess.CREATE_NEW_CONSOLE)
             return
-        subprocess.Popen(["cmd", "/k", "echo Sign in when asked, then type /exit and close this window. & \"" + exe + "\""],
-                         cwd=str(STUDIO if STUDIO.exists() else HOME), env=ENV,
+        messagebox.showinfo("Log in to Claude", "A Claude Code window will open.\n\n"
+                            "Sign in when asked (or type /login), then type /exit and close that window.")
+        # pass the exe as its own argument: embedding quotes made Python escape them as \" and cmd failed
+        subprocess.Popen(["cmd", "/k", exe], cwd=str(STUDIO if STUDIO.exists() else HOME), env=ENV,
                          creationflags=subprocess.CREATE_NEW_CONSOLE)
 
     def self_test(self):
@@ -1240,8 +1242,9 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
         if not exe:
             messagebox.showerror("Claude", "Claude Code CLI not found.")
             return
-        subprocess.Popen(["cmd", "/k", f'echo The prompt is on your clipboard - paste it (right-click) and press Enter. & "{exe}"'],
-                         cwd=str(STUDIO), env=ENV, creationflags=subprocess.CREATE_NEW_CONSOLE)
+        messagebox.showinfo("Claude Code", "The video prompt is copied to your clipboard.\n\n"
+                            "In the Claude Code window that opens, paste it (right-click or Ctrl+V) and press Enter.")
+        subprocess.Popen(["cmd", "/k", exe], cwd=str(STUDIO), env=ENV, creationflags=subprocess.CREATE_NEW_CONSOLE)
 
     def _latest_mp4(self):
         cand = []
