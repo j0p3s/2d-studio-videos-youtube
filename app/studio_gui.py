@@ -1,7 +1,7 @@
 """2D Animation Studio - Windows GUI.
 
-Pipeline:  ScriptForge (ideas + script, via Claude Code)  ->  voiceover (edge-tts or your file)
-           ->  GrowKaz Stickman Studio animation (Claude Code runs the make-2d-video skill)
+Pipeline:  ScriptForge (ideas + script, via the selected AI)  ->  voiceover (edge-tts or your file)
+           ->  GrowKaz Stickman Studio animation (the selected agent runs the make-2d-video skill)
            ->  thumbnail  ->  YouTube upload (YouTube Data API v3).
 """
 import hashlib
@@ -16,6 +16,7 @@ import threading
 import time
 import traceback
 import webbrowser
+from ai_providers import PROVIDERS, cli_command, run_agent, portable_prompt
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -85,7 +86,7 @@ VOICES = ["en-US-AndrewNeural", "en-US-GuyNeural", "en-US-ChristopherNeural", "e
           "pt-BR-AntonioNeural", "pt-BR-FranciscaNeural", "pt-PT-DuarteNeural", "pt-PT-RaquelNeural",
           "es-ES-AlvaroNeural", "fr-FR-HenriNeural", "de-DE-ConradNeural"]
 STYLES = {"Emerald (GrowKaz)": "emerald", "Ember Forge": "ember", "Arctic Glass": "arctic",
-          "Sakura Bloom": "sakura", "Retro Print": "retro", "Let Claude choose": "auto"}
+          "Sakura Bloom": "sakura", "Retro Print": "retro", "Let AI choose": "auto"}
 CATEGORIES = {"Education": "27", "Science & Technology": "28", "Entertainment": "24",
               "People & Blogs": "22", "Film & Animation": "1", "Howto & Style": "26"}
 ACCENT, ACCENT_HOVER = "#10b981", "#059669"
@@ -167,7 +168,7 @@ def extract_json(text, opener="["):
     closer = "]" if opener == "[" else "}"
     a, b = text.find(opener), text.rfind(closer)
     if a < 0 or b <= a:
-        raise ValueError("Claude did not return JSON:\n" + text[:500])
+        raise ValueError("AI did not return JSON:\n" + text[:500])
     return json.loads(text[a:b + 1])
 
 
@@ -375,6 +376,7 @@ class Studio(ctk.CTk):
         if self._auto:
             label = f"⚡ Auto {self._auto_n}/5 · {label}"
         self.busy = True
+        self._job_ai = {k: v for k, v in self.settings.items() if k.endswith(("_provider", "_model"))}
         self._cancel = False
         self._job = {"label": label, "t0": time.time(), "frac": 0.0, "text": "", "eta": None, "indet": indeterminate}
         self.progress.configure(mode="indeterminate" if indeterminate else "determinate")
@@ -443,6 +445,33 @@ class Studio(ctk.CTk):
                 on_line(line.rstrip("\n"))
         return self.proc.wait()
 
+    def ask_ai(self, prompt, box=None, tools=None, full_auto=False, cwd=None, expect_chars=None, on_tool=None):
+        stage = "animation" if tools else "script"
+        ai = getattr(self, "_job_ai", self.settings)
+        provider = ai.get(stage + "_provider", "Claude")
+        if provider == "Claude":
+            return self.ask_claude(prompt, box, tools, full_auto, cwd, expect_chars, on_tool)
+        self.prog(0.03, f"starting {provider}")
+        written = 0
+
+        def event(kind, value):
+            nonlocal written
+            if kind == "tool":
+                if on_tool:
+                    on_tool(value.get("name", "tool"), value)
+                if box is not None:
+                    self.log(box, f"🔧 {value.get('name')}: {str(value.get('command') or value.get('file_path') or '')[:160]}")
+            else:
+                if box is not None:
+                    self.log(box, value)
+                if kind == "text" and expect_chars:
+                    written += len(value)
+                    self.prog(min(0.97, 0.06 + 0.91 * written / expect_chars), f"writing… {written // 6:,} words")
+        return run_agent(provider, prompt, self.run_cmd, cwd=cwd or HOME, env=ENV,
+                         animation=bool(tools), full_auto=full_auto,
+                         model=ai.get(stage + "_model", ""),
+                         skill_dir=SKILLS_DIR / "make-2d-video", on_event=event)
+
     def ask_claude(self, prompt, box=None, tools=None, full_auto=False, cwd=None, expect_chars=None, on_tool=None):
         """Run `claude -p` headless, stream progress into box, return the final result text.
         expect_chars: roughly how long the answer is, so the bar can follow the text as it is written.
@@ -451,6 +480,10 @@ class Studio(ctk.CTk):
         if not exe:
             raise RuntimeError("Claude Code CLI not found. Go to Setup and install / log in.")
         cmd = [exe, "-p", "--output-format", "stream-json", "--verbose"]
+        stage = "animation" if tools else "script"
+        model = getattr(self, "_job_ai", self.settings).get(stage + "_model", "")
+        if model:
+            cmd += ["--model", model]
         if expect_chars:
             cmd.append("--include-partial-messages")
         if full_auto:
@@ -504,7 +537,7 @@ class Studio(ctk.CTk):
         if cwd is None:
             cwd = STUDIO if STUDIO.exists() else HOME
         rc = self.run_cmd(cmd, cwd=str(cwd), stdin_text=prompt, on_line=on_line)
-        if rc != 0 and not result["text"]:
+        if rc != 0:
             raise RuntimeError(f"Claude exited with code {rc}. If you are not logged in, use Setup → Log in to Claude.")
         if result["error"]:
             msg = result["text"] or "Claude reported an error."
@@ -692,7 +725,31 @@ class Studio(ctk.CTk):
     # ================================================================== SETUP PAGE
     def _page_setup(self, p):
         self.header(p, "Setup & Tools", "Everything the pipeline needs. Green = ready. "
-                    "Use Auto-fix if something is missing, then log in to Claude once.")
+                    "Choose your AI providers below, then install and sign in to their CLIs.")
+        ai = self.card(p)
+        for stage, label in [("script", "Ideas & script"), ("animation", "Animation & character designs")]:
+            row_ai = ctk.CTkFrame(ai, fg_color="transparent")
+            row_ai.pack(fill="x", padx=12, pady=5)
+            ctk.CTkLabel(row_ai, text=label, width=200, anchor="w").pack(side="left")
+            def save_provider(value, stage=stage):
+                self.settings[stage + "_provider"] = value
+                save_settings(self.settings)
+            menu = ctk.CTkOptionMenu(row_ai, values=list(PROVIDERS), command=save_provider)
+            menu.set(self.settings.get(stage + "_provider", "Claude"))
+            menu.pack(side="left", padx=6)
+            model = ctk.CTkEntry(row_ai, placeholder_text="Model (blank = CLI default)", width=220)
+            model.insert(0, self.settings.get(stage + "_model", ""))
+            model.pack(side="left", padx=6)
+            def save_model(event=None, stage=stage, entry=model):
+                self.settings[stage + "_model"] = entry.get().strip()
+                save_settings(self.settings)
+            model.bind("<FocusOut>", save_model)
+            model.bind("<Return>", save_model)
+        buttons_ai = ctk.CTkFrame(ai, fg_color="transparent")
+        buttons_ai.pack(fill="x", padx=12, pady=6)
+        for provider in ("OpenAI (Codex)", "Gemini"):
+            ctk.CTkButton(buttons_ai, text=f"Install {provider}", command=lambda v=provider: self.install_ai(v)).pack(side="left", padx=4)
+            ctk.CTkButton(buttons_ai, text=f"Sign in: {provider}", command=lambda v=provider: self.login_ai(v)).pack(side="left", padx=4)
         c = self.card(p)
         self.checks_frame = ctk.CTkFrame(c, fg_color="transparent")
         self.checks_frame.pack(fill="x", padx=16, pady=14)
@@ -727,9 +784,14 @@ class Studio(ctk.CTk):
                 ("GrowKaz studio kit", str(STUDIO) if (STUDIO / "render.mjs").exists() else None),
                 ("three.js + Playwright", "installed" if (STUDIO / "node_modules" / "three").exists()
                  and (STUDIO / "node_modules" / "playwright").exists() else None),
-                ("Claude skills (make-2d-video, scriptforge)", "installed" if (SKILLS_DIR / "make-2d-video" / "SKILL.md").exists()
+                ("Shared skills (make-2d-video, scriptforge)", "installed" if (SKILLS_DIR / "make-2d-video" / "SKILL.md").exists()
                  and (SKILLS_DIR / "scriptforge" / "SKILL.md").exists() else None),
             ]
+            for provider in ("OpenAI (Codex)", "Gemini"):
+                try:
+                    items.append((provider + " CLI (optional)", probe(cli_command(provider, ENV) + ["--version"])))
+                except RuntimeError:
+                    items.append((provider + " CLI (optional)", None))
             for mod, label in [("faster_whisper", "faster-whisper"), ("edge_tts", "edge-tts (voices)"),
                                ("googleapiclient", "YouTube API client"), ("PIL", "Pillow (thumbnails)")]:
                 try:
@@ -798,6 +860,27 @@ class Studio(ctk.CTk):
         subprocess.Popen(["cmd", "/k", exe], cwd=str(STUDIO if STUDIO.exists() else HOME), env=ENV,
                          creationflags=subprocess.CREATE_NEW_CONSOLE)
 
+    def install_ai(self, provider):
+        package = "@openai/codex" if provider == "OpenAI (Codex)" else "@google/gemini-cli"
+        def work():
+            rc = self.run_cmd(["cmd", "/c", "npm", "install", "-g", package],
+                              on_line=lambda line: self.log(self.setup_log, line))
+            if rc:
+                raise RuntimeError(f"Could not install {provider}. See the Setup log.")
+            ENV.update(fresh_env())
+        self.run_job(f"Installing {provider}", work, lambda _: self.check_setup())
+
+    def login_ai(self, provider):
+        try:
+            cmd = cli_command(provider, ENV)
+        except RuntimeError as e:
+            messagebox.showerror(provider, str(e))
+            return
+        if provider == "OpenAI (Codex)":
+            cmd += ["login"]
+        subprocess.Popen(["cmd", "/k", *cmd], cwd=str(HOME), env=ENV,
+                         creationflags=subprocess.CREATE_NEW_CONSOLE)
+
     def self_test(self):
         if not STUDIO.exists():
             messagebox.showerror("Self-test", "Studio kit not installed.")
@@ -840,7 +923,7 @@ class Studio(ctk.CTk):
 
     # ================================================================== SCRIPT PAGE
     def _page_script(self, p):
-        self.header(p, "① Script — ScriptForge", "Pick a niche, get 10 ideas from Claude, choose one, "
+        self.header(p, "① Script — ScriptForge", "Pick a niche, get 10 ideas from your selected AI, choose one, "
                     "and get a full narrated script with titles, tags and thumbnail text.")
         top = self.card(p)
         top.grid_columnconfigure(5, weight=1)
@@ -916,7 +999,7 @@ class Studio(ctk.CTk):
                   + 'Return ONLY a JSON array of exactly 10 objects: [{"title": "...", "hook": "...", "format": "listicle|deep-dive|truth-about|countdown|story"}]. No other text.')
 
         def work():
-            return extract_json(self.ask_claude(prompt, cwd=HOME, expect_chars=1900), "[")
+            return extract_json(self.ask_ai(prompt, cwd=HOME, expect_chars=1900), "[")
 
         def done(ideas):
             self.ideas = ideas
@@ -994,7 +1077,7 @@ class Studio(ctk.CTk):
         expect = int(words * 6 * 2.4 + 900)
 
         def work():
-            return self.ask_claude(prompt, cwd=HOME, expect_chars=expect)
+            return self.ask_ai(prompt, cwd=HOME, expect_chars=expect)
 
         def done(text):
             parts = re.split(r"^===(SCRIPT|NARRATION|META)===\s*$", text, flags=re.M)
@@ -1357,7 +1440,7 @@ class Studio(ctk.CTk):
 
     # ================================================================== ANIMATE PAGE
     def _page_animate(self, p):
-        self.header(p, "③ Animate — GrowKaz Stickman Studio", "Claude Code runs the make-2d-video skill end to end: "
+        self.header(p, "③ Animate — GrowKaz Stickman Studio", "the selected agent runs the make-2d-video skill end to end: "
                     "timestamps (Whisper), shot plan, code-drawn 2D/3D scenes, render, music, SFX and the final MP4. "
                     "Long videos can take a while — leave it running.")
         c = self.card(p)
@@ -1398,7 +1481,7 @@ class Studio(ctk.CTk):
         self.ent_look.grid(row=3, column=3, columnspan=3, sticky="w")
         ctk.CTkButton(g, text="🎨 Suggest character styles", width=190, fg_color="#1d222b", hover_color="#272d38",
                       command=self.suggest_characters).grid(row=3, column=6, padx=(10, 0), sticky="w")
-        ctk.CTkLabel(g, text="Parts: long videos are built in several Claude passes (Auto = one part per ~2.5 min), "
+        ctk.CTkLabel(g, text="Parts: long videos are built in several AI passes (Auto = one part per ~2.5 min), "
                              "like splitting the script in the tutorial — then rendered as one final MP4.",
                      text_color="#7c8594", font=ctk.CTkFont(size=11)).grid(row=4, column=0, columnspan=8, sticky="w", pady=(4, 0))
         self.opt_aspect.configure(command=lambda v: self.chk_capt.select() if v == "9:16" else self.chk_capt.deselect())
@@ -1408,7 +1491,7 @@ class Studio(ctk.CTk):
         row.pack(fill="x", pady=8)
         ctk.CTkButton(row, text="🎬 Make the video (automatic)", height=42, font=ctk.CTkFont(size=15, weight="bold"),
                       command=self.make_video).pack(side="left")
-        ctk.CTkButton(row, text="💻 Open in Claude Code (interactive)", height=42, fg_color="#1d222b",
+        ctk.CTkButton(row, text="💻 Open animation agent (interactive)", height=42, fg_color="#1d222b",
                       hover_color="#272d38", command=self.interactive_video).pack(side="left", padx=8)
         ctk.CTkButton(row, text="📁 Project folder", height=42, fg_color="#1d222b", hover_color="#272d38",
                       command=self.open_project).pack(side="left")
@@ -1481,7 +1564,7 @@ When out/<title>.mp4 is muxed and QC'd, finish with one final line exactly like:
 FINAL_VIDEO: <absolute path to the mp4>"""
 
     def _part_prompts(self, n, dur):
-        """Split the build into n Claude passes; files on disk carry state between passes."""
+        """Split the build into n AI passes; files on disk carry state between passes."""
         base = self._video_prompt().split("\n\n", 2)[2]   # facts block only
         slug = self.s["slug"]
         bounds = [round(dur * i / n, 2) for i in range(n + 1)]
@@ -1534,13 +1617,13 @@ TASK: suggest character designs, do NOT make the video yet.
 5. Do not change the real cast or shots. Finish with one line per option, exactly:
 CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
         self.anim_log.delete("1.0", "end")
-        self.log(self.anim_log, "🎨 Asking Claude for 4 character designs…")
+        self.log(self.anim_log, "🎨 Asking the animation agent for 4 character designs…")
         tools = ["Bash", "Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "Skill", "TodoWrite"]
 
         def work():
             out_dir = STUDIO / "projects" / slug / "build" / "char_styles"
             stop = threading.Event()
-            self._anim_hint, t0 = "Claude is reading the skill", time.time()
+            self._anim_hint, t0 = "Animation agent is reading the skill", time.time()
 
             def watch():   # 4 stills to make; each one that appears is a quarter of the work
                 while not stop.wait(1.5):
@@ -1548,7 +1631,7 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
                     self.prog(0.1 + 0.85 * min(n, 4) / 4, f"{n}/4 designs rendered · {self._anim_hint}")
             threading.Thread(target=watch, daemon=True).start()
             try:
-                res = self.ask_claude(prompt, box=self.anim_log, tools=tools, full_auto=bool(self.chk_auto.get()),
+                res = self.ask_ai(prompt, box=self.anim_log, tools=tools, full_auto=bool(self.chk_auto.get()),
                                       cwd=STUDIO, on_tool=self._anim_tool_hint)
             finally:
                 stop.set()
@@ -1556,7 +1639,7 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
             for m in re.finditer(r"CHAR_STYLE:\s*(\d+)\s*\|\s*([^|]+)\|\s*([^|]+)\|\s*(.+)", res):
                 opts.append((m.group(1), m.group(2).strip(), m.group(3).strip(), m.group(4).strip().strip("`\"")))
             if not opts:
-                raise RuntimeError("Claude did not return character options — see the log.")
+                raise RuntimeError("Animation agent did not return character options — see the log.")
             return opts
         self.run_job("Designing characters", work, self._pick_character)
 
@@ -1610,14 +1693,14 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
         n = max(1, min(6, round(dur / 150))) if sel == "Auto" else int(sel)
         prompts = [prompt] if n == 1 else self._part_prompts(n, dur or 60)
         self.anim_log.delete("1.0", "end")
-        self.log(self.anim_log, f"▶ Starting Claude Code in {STUDIO}  —  voiceover {dur:.0f}s, "
+        self.log(self.anim_log, f"▶ Starting animation agent in {STUDIO}  —  voiceover {dur:.0f}s, "
                                 f"{len(prompts)} pass{'es' if len(prompts) > 1 else ''}")
 
         def work():
             res = ""
             t0 = time.time()
             stop = threading.Event()
-            self._anim_hint = "Claude is reading the skill"
+            self._anim_hint = "Animation agent is reading the skill"
             threading.Thread(target=self._watch_pipeline, args=(self.s["slug"], t0, stop), daemon=True).start()
             try:
                 for i, pr in enumerate(prompts, 1):
@@ -1625,7 +1708,7 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
                     if len(prompts) > 1:
                         self.log(self.anim_log, f"\n━━━━━━━━ Pass {i} of {len(prompts)} ━━━━━━━━")
                     self._anim_pass = f"pass {i}/{len(prompts)} · " if len(prompts) > 1 else ""
-                    res = self.ask_claude(pr, box=self.anim_log, tools=tools, full_auto=full, cwd=STUDIO,
+                    res = self.ask_ai(pr, box=self.anim_log, tools=tools, full_auto=full, cwd=STUDIO,
                                           on_tool=self._anim_tool_hint)
             finally:
                 stop.set()
@@ -1645,8 +1728,8 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
                 if not self._auto and messagebox.askyesno("Video ready", f"{path}\n\nOpen it now?"):
                     open_path(path)
             else:
-                messagebox.showwarning("Animate", "Claude finished but no MP4 was found. Read the log, "
-                                                  "or continue in the interactive Claude Code window.")
+                messagebox.showwarning("Animate", "Animation agent finished but no MP4 was found. Read the log, "
+                                                  "or continue in the interactive agent window.")
         self.run_job("Making the video", work, done)
 
     # ---- Animate progress: read the pipeline's own files (files are the truth in the GrowKaz skill)
@@ -1742,17 +1825,21 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
         except RuntimeError as e:
             messagebox.showinfo("Animate", str(e))
             return
-        f = self._workdir() / "claude_prompt.txt"
+        provider = self.settings.get("animation_provider", "Claude")
+        if provider != "Claude":
+            prompt = portable_prompt(prompt, SKILLS_DIR / "make-2d-video", True)
+        f = self._workdir() / "animation_prompt.txt"
         f.write_text(prompt, encoding="utf-8")
         self.clipboard_clear()
         self.clipboard_append(prompt)
-        exe = claude_exe()
-        if not exe:
-            messagebox.showerror("Claude", "Claude Code CLI not found.")
+        try:
+            cmd = cli_command(provider, ENV)
+        except RuntimeError as e:
+            messagebox.showerror(provider, str(e))
             return
-        messagebox.showinfo("Claude Code", "The video prompt is copied to your clipboard.\n\n"
-                            "In the Claude Code window that opens, paste it (right-click or Ctrl+V) and press Enter.")
-        subprocess.Popen(["cmd", "/k", exe], cwd=str(STUDIO), env=ENV, creationflags=subprocess.CREATE_NEW_CONSOLE)
+        messagebox.showinfo(provider, "The video prompt is copied to your clipboard.\n\n"
+                            "In the agent window that opens, paste it (right-click or Ctrl+V) and press Enter.")
+        subprocess.Popen(["cmd", "/k", *cmd], cwd=str(STUDIO), env=ENV, creationflags=subprocess.CREATE_NEW_CONSOLE)
 
     def _latest_mp4(self):
         cand = []
