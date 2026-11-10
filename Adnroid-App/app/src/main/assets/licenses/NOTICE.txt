@@ -1,0 +1,10 @@
+This build embeds unmodified edge-tts 7.3.1 (rany2/edge-tts) using Chaquopy.
+edge-tts is distributed under LGPLv3, except srt_composer.py under MIT.
+The upstream license and GPLv3 text are included in this directory.
+Upstream source: https://github.com/rany2/edge-tts
+Exact package source: https://pypi.org/project/edge-tts/7.3.1/#files
+The Android bridge is src/main/python/edge_voice.py in this repository.
+The application source and pinned build configuration are supplied with the APK's project.
+Chaquopy: https://github.com/chaquo/chaquopy (MIT).
+Python: https://www.python.org/psf/license/ (PSF license).
+Other Python package distributions include their own licensing metadata.

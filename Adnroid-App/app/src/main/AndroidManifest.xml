@@ -1,0 +1,12 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+ <uses-permission android:name="android.permission.INTERNET"/>
+ <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+ <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING"/>
+ <uses-permission android:name="android.permission.WAKE_LOCK"/>
+ <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+ <application android:name=".StudioApplication" android:label="2D Studio" android:icon="@drawable/ic_studio" android:theme="@android:style/Theme.Material.NoActionBar" android:allowBackup="false" android:dataExtractionRules="@xml/backup_rules" android:usesCleartextTraffic="false">
+  <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.debugfiles" android:exported="false" android:grantUriPermissions="true"><meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/debug_paths"/></provider>
+  <activity android:name=".MainActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity>
+  <service android:name=".RenderService" android:exported="false" android:foregroundServiceType="mediaProcessing"/>
+ </application>
+</manifest>
