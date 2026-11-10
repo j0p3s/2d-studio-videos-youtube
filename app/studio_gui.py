@@ -17,6 +17,8 @@ import time
 import traceback
 import webbrowser
 from ai_providers import PROVIDERS, cli_command, run_agent, portable_prompt
+from language_policy import (ENGLISH_VOICES, english_voice, english_prompt, narration_hash,
+                             normalize_narration_prompt, migrate_speech_settings, verify_english_recording)
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -80,11 +82,7 @@ NICHES = {
                    "5.4 Empires, Rulers & Dynasties", "5.5 Forgotten & Strange History"],
 }
 CUSTOM = "Custom sub-niche..."
-VOICES = ["en-US-AndrewNeural", "en-US-GuyNeural", "en-US-ChristopherNeural", "en-US-BrianNeural",
-          "en-US-EricNeural", "en-US-AriaNeural", "en-US-JennyNeural", "en-US-EmmaNeural",
-          "en-GB-RyanNeural", "en-GB-SoniaNeural", "en-AU-WilliamNeural",
-          "pt-BR-AntonioNeural", "pt-BR-FranciscaNeural", "pt-PT-DuarteNeural", "pt-PT-RaquelNeural",
-          "es-ES-AlvaroNeural", "fr-FR-HenriNeural", "de-DE-ConradNeural"]
+VOICES = ENGLISH_VOICES
 STYLES = {"Emerald (GrowKaz)": "emerald", "Ember Forge": "ember", "Arctic Glass": "arctic",
           "Sakura Bloom": "sakura", "Retro Print": "retro", "Let AI choose": "auto"}
 CATEGORIES = {"Education": "27", "Science & Technology": "28", "Entertainment": "24",
@@ -193,8 +191,9 @@ class Studio(ctk.CTk):
         self.q = queue.Queue()
         self.proc = None
         self.busy = False
-        self.settings = load_settings()
+        self.settings = migrate_speech_settings(load_settings())
         self.s = self.settings.get("current", {})   # current video state
+        save_settings(self.settings)
         self.ideas = []
 
         self.grid_columnconfigure(1, weight=1)
@@ -446,6 +445,7 @@ class Studio(ctk.CTk):
         return self.proc.wait()
 
     def ask_ai(self, prompt, box=None, tools=None, full_auto=False, cwd=None, expect_chars=None, on_tool=None):
+        prompt = english_prompt(prompt)
         stage = "animation" if tools else "script"
         ai = getattr(self, "_job_ai", self.settings)
         provider = ai.get(stage + "_provider", "Claude")
@@ -1070,7 +1070,7 @@ class Studio(ctk.CTk):
     # Kept when a script for a new idea starts a new project; everything else belongs to the old video.
     SESSION_KEYS = ("niche_main", "niche_sub", "ideas", "used_ideas")
 
-    def _script_request(self, prompt, fallback_title, shorts, words=525, new_video=False):
+    def _script_request(self, prompt, fallback_title, shorts, words=525, new_video=False, after_done=None):
         """new_video: this script is for a new idea, so it gets its own project (slug, voiceover,
         video, uploads). Revising the current script keeps the current project."""
         # SCRIPT (narration + visual cues + headers) + NARRATION again + META JSON ≈ 2.4× the spoken text
@@ -1095,11 +1095,17 @@ class Studio(ctk.CTk):
                 self.s = {k: self.s[k] for k in self.SESSION_KEYS if k in self.s}
                 self._clear_upload_page()
             slug = self.s.get("slug") or (slugify(title) + datetime.now().strftime("-%m%d%H%M"))
+            if narration != self.s.get("narration"):
+                for key in ("voice", "video", "thumb", "script_file"):
+                    self.s.pop(key, None)
             self.s.update({"script": script, "narration": narration, "meta": meta, "title": title,
-                           "slug": slug, "shorts": shorts})
+                           "slug": slug, "shorts": shorts, "lang": "en",
+                           "narration_en_hash": narration_hash(narration)})
             self.txt_script.delete("1.0", "end")
             self.txt_script.insert("1.0", script + self._meta_block(meta))
             self.save_state()
+            if after_done:
+                after_done()
         self.run_job("Writing script", work, done)
 
     @staticmethod
@@ -1132,11 +1138,10 @@ class Studio(ctk.CTk):
             return
         text = Path(f).read_text(encoding="utf-8", errors="replace")
         title = Path(f).stem
-        self.s.update({"script": text, "narration": self._narration_from_script(text) or text, "title": title,
-                       "slug": slugify(title) + datetime.now().strftime("-%m%d%H%M"), "meta": {}})
-        self.txt_script.delete("1.0", "end")
-        self.txt_script.insert("1.0", text)
-        self.save_state()
+        prompt = ("Import this script faithfully in English. Translate non-English content; keep existing "
+                  "English wording and meaning. Do not expand or shorten the narration. Extract spoken words "
+                  "separately from timestamps and directions.\n\n" + text + "\n\n" + self.SCRIPT_FORMAT)
+        self._script_request(prompt, title, False, max(1, len(text.split())), new_video=True)
 
     def script_next(self):
         text = self.txt_script.get("1.0", "end").strip()
@@ -1144,9 +1149,14 @@ class Studio(ctk.CTk):
             messagebox.showinfo("Script", "Write or load a script first.")
             return
         text = text.split("\n\n──────── extras ────────")[0]
-        if text != self.s.get("script"):
-            self.s["script"] = text
-            self.s["narration"] = self._narration_from_script(text) or self.s.get("narration") or text
+        if text != self.s.get("script") or not self.s.get("narration_en_hash"):
+            prompt = ("Normalize this edited script into English without changing its meaning or expanding "
+                      "its narration. Keep English spoken words unchanged; translate other languages. "
+                      "Extract the exact narration from the edited text, not from an older version.\n\n"
+                      + text + "\n\n" + self.SCRIPT_FORMAT)
+            self._script_request(prompt, self.s.get("title", "My video"), self.s.get("shorts", False),
+                                 max(1, len(text.split())), after_done=lambda: self.show("voice"))
+            return
         if not self.s.get("slug"):
             self.s["title"] = self.s.get("title") or "My video"
             self.s["slug"] = slugify(self.s["title"]) + datetime.now().strftime("-%m%d%H%M")
@@ -1155,11 +1165,11 @@ class Studio(ctk.CTk):
 
     # ================================================================== VOICE PAGE
     def _page_voice(self, p):
-        self.header(p, "② Voiceover", "Generate a natural AI voice from the narration — free Microsoft Edge "
-                    "neural voices or ElevenLabs (your API key) — or use your own recording.")
+        self.header(p, "② Voiceover", "English narration with natural Microsoft Neural voices for every AI provider. "
+                    "Imported recordings must also be in English.")
         eng = self.card(p)
         ctk.CTkLabel(eng, text="Voice engine").grid(row=0, column=0, padx=(16, 6), pady=12)
-        self.opt_engine = ctk.CTkSegmentedButton(eng, values=["Free (Edge)", "ElevenLabs"], command=self._on_engine)
+        self.opt_engine = ctk.CTkSegmentedButton(eng, values=["Free (Edge)"], command=self._on_engine)
         self.opt_engine.grid(row=0, column=1, padx=(0, 16))
         self.el_frame = ctk.CTkFrame(eng, fg_color="transparent")
         ctk.CTkLabel(self.el_frame, text="API key").pack(side="left")
@@ -1179,7 +1189,7 @@ class Studio(ctk.CTk):
         self.edge_label = ctk.CTkLabel(c, text="Edge voice")
         self.edge_label.grid(row=0, column=0, padx=(16, 6), pady=14)
         self.opt_voice = ctk.CTkOptionMenu(c, values=VOICES, width=240)
-        self.opt_voice.set(self.settings.get("voice", VOICES[0]))
+        self.opt_voice.set(english_voice(self.settings.get("voice")))
         self.opt_voice.grid(row=0, column=1)
         ctk.CTkLabel(c, text="Speed").grid(row=0, column=2, padx=(18, 6))
         self.sld_rate = ctk.CTkSlider(c, from_=-30, to=30, number_of_steps=12, width=160,
@@ -1189,7 +1199,7 @@ class Studio(ctk.CTk):
         self.lbl_rate = ctk.CTkLabel(c, text=f"{int(self.sld_rate.get()):+d}%", width=50)
         self.lbl_rate.grid(row=0, column=4)
         ctk.CTkButton(c, text="🎙 Generate voiceover", height=36, command=self.make_voice).grid(row=0, column=5, padx=12)
-        ctk.CTkButton(c, text="📂 Use my recording…", height=36, fg_color="#1d222b", hover_color="#272d38",
+        ctk.CTkButton(c, text="📂 English recording…", height=36, fg_color="#1d222b", hover_color="#272d38",
                       command=self.pick_voice).grid(row=0, column=6, padx=(0, 16))
 
         ctk.CTkLabel(p, text="Narration text (exactly what is spoken — edit freely)",
@@ -1207,6 +1217,8 @@ class Studio(ctk.CTk):
         self._on_engine(self.opt_engine.get())
 
     def _on_engine(self, v):
+        v = "Free (Edge)"
+        self.opt_engine.set(v)
         if v == "ElevenLabs":
             self.el_frame.grid(row=0, column=2, sticky="w", pady=8)
         else:
@@ -1312,6 +1324,7 @@ class Studio(ctk.CTk):
         VOICE_WORKERS passages at once, joined in order."""
         import asyncio
         import edge_tts
+        voice = english_voice(voice)
         rate_s = f"{rate:+d}%"
         parts = self._speech_chunks(text)
         if not parts:
@@ -1413,19 +1426,27 @@ class Studio(ctk.CTk):
         if not text:
             messagebox.showinfo("Voiceover", "The narration is empty.")
             return
-        voice, rate = self.opt_voice.get(), int(self.sld_rate.get())
-        self.settings.update({"voice": voice, "rate": rate})
+        voice, rate = english_voice(self.opt_voice.get()), int(self.sld_rate.get())
+        self.opt_voice.set(voice)
+        self.settings.update({"voice": voice, "rate": rate, "engine": "Free (Edge)"})
         out = d / "voiceover.mp3"
-        use_el = self.opt_engine.get() == "ElevenLabs"
+        english_verified = self.s.get("narration_en_hash") == narration_hash(text)
 
         def work():
+            narration = text if english_verified else self.ask_ai(normalize_narration_prompt(text), cwd=HOME)
+            self.check_cancel()
+            (d / "script.txt").write_text(narration + "\n", encoding="utf-8")
             (d / "voiceover.srt").unlink(missing_ok=True)   # leftover from the old single-request method
-            if use_el:
-                return self._make_voice_elevenlabs(text, d, out)
-            return self._make_voice_edge(text, d, out, voice, rate)
+            return self._make_voice_edge(narration, d, out, voice, rate), narration
 
         def done(o):
-            self.s.update({"voice": str(o), "lang": "detect it from the script text" if use_el else voice.split("-")[0]})
+            audio, narration = o
+            self.s.pop("video", None)
+            self.s.pop("thumb", None)
+            self.s.update({"voice": str(audio), "lang": "en", "narration": narration,
+                           "narration_en_hash": narration_hash(narration), "speech_engine": "microsoft-neural"})
+            self.txt_narr.delete("1.0", "end")
+            self.txt_narr.insert("1.0", narration)
             self.save_state()
             self._sync_voice_page()
         self.run_job("Generating voiceover", work, done)
@@ -1433,10 +1454,22 @@ class Studio(ctk.CTk):
     def pick_voice(self):
         f = filedialog.askopenfilename(filetypes=[("Audio", "*.mp3 *.wav *.m4a *.flac *.ogg *.aac"), ("All", "*.*")])
         if f:
-            self._save_narration()
-            self.s["voice"] = f
-            self.save_state()
-            self._sync_voice_page()
+            text, d = self._save_narration()
+            def work():
+                self.prog(0.1, "Checking that the recording is English")
+                verify_english_recording(f, ENV, NO_WINDOW)
+                return text if self.s.get("narration_en_hash") == narration_hash(text) else self.ask_ai(normalize_narration_prompt(text), cwd=HOME)
+            def done(narration):
+                (d / "script.txt").write_text(narration + "\n", encoding="utf-8")
+                self.s.pop("video", None)
+                self.s.pop("thumb", None)
+                self.s.update({"voice": f, "lang": "en", "narration": narration,
+                               "narration_en_hash": narration_hash(narration), "speech_engine": "imported-english"})
+                self.txt_narr.delete("1.0", "end")
+                self.txt_narr.insert("1.0", narration)
+                self.save_state()
+                self._sync_voice_page()
+            self.run_job("Checking English recording", work, done)
 
     # ================================================================== ANIMATE PAGE
     def _page_animate(self, p):
@@ -1525,6 +1558,8 @@ class Studio(ctk.CTk):
     def _video_prompt(self):
         if not self.s.get("voice"):
             raise RuntimeError("No voiceover yet. Go to ② Voiceover first.")
+        if self.s.get("lang") != "en":
+            raise RuntimeError("This voiceover has not been verified as English. Generate an English voiceover first.")
         if not self.s.get("script_file"):
             self._save_narration()
         style = STYLES[self.opt_style.get()]
@@ -1549,7 +1584,8 @@ state your assumption in one line, and continue until the final MP4 exists.
 - Python command: "{PY}"
 - Voiceover file: {self.s['voice']}
 - Script (plain text, the exact narration): {self.s['script_file']}
-- Narration language: {self.s.get('lang', 'en')}
+- Narration language: English only (en). Use --lang en for transcription/alignment.
+- All captions, subtitles and on-screen text: English only; preserve the English spoken words.
 - Title: {self.s.get('title', slug)}
 - Project slug: {slug}
 - Aspect: {self.opt_aspect.get()}   Resolution: {self.opt_res.get()}   FPS: 24
@@ -1826,6 +1862,7 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
             messagebox.showinfo("Animate", str(e))
             return
         provider = self.settings.get("animation_provider", "Claude")
+        prompt = english_prompt(prompt)
         if provider != "Claude":
             prompt = portable_prompt(prompt, SKILLS_DIR / "make-2d-video", True)
         f = self._workdir() / "animation_prompt.txt"
