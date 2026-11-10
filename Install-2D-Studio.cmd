@@ -26,7 +26,7 @@ echo  ===========================================================
 echo     2D ANIMATION STUDIO  -  one-click installer
 echo  ===========================================================
 echo   Install folder : %HOME2D%
-echo   Claude skills  : %SKILLS%
+echo   Shared skills  : %SKILLS%
 echo.
 echo   This will install (if missing): Git, Node.js, Python, FFmpeg,
 echo   Claude Code, Chromium (headless), and about 1 GB of tools.
@@ -84,6 +84,7 @@ if not defined CLAUDE_OK (
   call :findclaude
 )
 if defined CLAUDE_OK (echo   [ok] Claude Code found) else (echo   [!] Claude Code not found - the GUI Setup page can retry this.)
+echo   [info] Codex and Gemini are optional alternatives: install and sign in from GUI Setup.
 
 rem ---------- 4. Copy app + plugin --------------------------------------------
 call :banner "4/7  App, GrowKaz Stickman plugin and ScriptForge skill"
@@ -159,7 +160,7 @@ echo  ===========================================================
 echo    DONE!  Open "2D Animation Studio" from your desktop.
 echo.
 echo    First time only:
-echo     - Setup page ^> "Log in to Claude" to sign in to Claude Code.
+echo     - Setup page ^> choose Claude, OpenAI Codex or Gemini and sign in.
 echo     - Upload page ^> "YouTube setup" to connect your channel.
 echo  ===========================================================
 echo.
