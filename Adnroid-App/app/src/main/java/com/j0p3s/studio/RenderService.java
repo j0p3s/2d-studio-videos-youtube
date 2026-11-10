@@ -10,7 +10,7 @@ import org.json.*;
 public class RenderService extends Service {
  static volatile Thread worker;static final String CHANNEL="render";
  public android.os.IBinder onBind(Intent i){return null;}
- void status(int percent,String text){getSharedPreferences("status",0).edit().putString("message",text).putInt("percent",percent).apply();
+ void status(int percent,String text){Diagnostics.event("export",percent+"% · "+text);getSharedPreferences("status",0).edit().putString("message",text).putInt("percent",percent).apply();
   Notification n=new Notification.Builder(this,CHANNEL).setContentTitle("2D Studio · "+percent+"%").setContentText(text).setSmallIcon(android.R.drawable.ic_media_play).setProgress(100,percent,false).build();getSystemService(NotificationManager.class).notify(1,n);}
  public int onStartCommand(Intent i,int flags,int id){
   if(i!=null&&"cancel".equals(i.getAction())){if(worker!=null)worker.interrupt();return START_NOT_STICKY;}
@@ -24,13 +24,13 @@ public class RenderService extends Service {
    try{
     int testSeconds=i==null?0:i.getIntExtra("testSeconds",0);
     if(testSeconds!=0&&testSeconds!=10&&testSeconds!=600)throw new IOException("Invalid test duration");
-    JSONObject cfg=new JSONObject(Vault.load(this));JSONObject plan;
+    JSONObject plan;
     if(testSeconds>0){JSONArray demo=new JSONArray();for(int s=0;s<testSeconds/10;s++)demo.put(new JSONObject().put("narration","Silent device benchmark. This tests rendering, not AI or voice quality.").put("caption","1080p device test · scene "+(s+1)).put("setting",new String[]{"desk","space","city","diagram"}[s%4]).put("prop",new String[]{"book","phone","clock","steps"}[s%4]));plan=new JSONObject().put("language","en").put("title","Silent benchmark").put("scenes",demo);}
     else plan=new JSONObject(TextFiles.read(new File(getFilesDir(),"plan.json").toPath()));Cloud.validate(plan);
     JSONArray scenes=plan.getJSONArray("scenes");File pcm=new File(temp,"voice.pcm");long bytes=0;
     try(OutputStream audio=new FileOutputStream(pcm)){
      for(int s=0;s<scenes.length();s++){VideoEncoder.check();status(s*30/scenes.length(),"Microsoft Neural · scene "+(s+1)+"/"+scenes.length());JSONObject scene=scenes.getJSONObject(s);
-      byte[] data=testSeconds>0?new byte[480000]:null;Exception failure=null;for(int attempt=0;attempt<3&&data==null;attempt++){try{data=Cloud.speech(cfg,scene.getString("narration"));break;}catch(Exception e){failure=e;VideoEncoder.check();if(attempt<2)Thread.sleep(1000L*(attempt+1));}}
+      byte[] data=testSeconds>0?new byte[480000]:null;Exception failure=null;for(int attempt=0;attempt<3&&data==null;attempt++){try{data=EdgeSpeech.synthesize(this,scene.getString("narration"));break;}catch(Exception e){failure=e;VideoEncoder.check();if(attempt<2)Thread.sleep(1000L*(attempt+1));}}
       if(data==null)throw failure;if(data.length==0||data.length%2!=0)throw new IOException("Invalid Microsoft speech PCM");scene.put("startUs",Timeline.pcmDuration(bytes));bytes+=data.length;if(Timeline.pcmDuration(bytes)>Timeline.MAX_US)throw new IOException("Narration exceeds 10 minutes. Shorten the plan.");scene.put("endUs",Timeline.pcmDuration(bytes));audio.write(data);
      }
     }
@@ -43,7 +43,7 @@ public class RenderService extends Service {
     try {try(OutputStream dest=getContentResolver().openOutputStream(uri);InputStream source=new FileInputStream(out)){source.transferTo(dest);}values.clear();values.put(MediaStore.Video.Media.IS_PENDING,0);getContentResolver().update(uri,values,null,null);}
     catch(Exception e){getContentResolver().delete(uri,null,null);throw e;}
     getSharedPreferences("status",0).edit().putString("video",uri.toString()).apply();status(100,"Ready · Movies/2D-Studio · "+(Timeline.pcmDuration(bytes)/1000000)+"s");
-   }catch(Exception e){status(0,Thread.currentThread().isInterrupted()?"Export cancelled":"Export failed: "+e.getMessage());}
+   }catch(Exception e){Diagnostics.failure("export-failed",e);status(0,Thread.currentThread().isInterrupted()?"Export cancelled":"Export failed: "+e.getMessage());}
    finally{if(lock.isHeld())lock.release();getSharedPreferences("status",0).edit().putBoolean("running",false).apply();worker=null;stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();}
   },"studio-render");worker.start();return START_NOT_STICKY;
  }
