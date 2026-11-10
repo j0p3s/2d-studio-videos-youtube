@@ -15,7 +15,7 @@ def cli_command(provider, env=None):
         candidate = Path.home() / ".local/bin/claude.exe"
         exe = str(candidate) if candidate.exists() else None
     if not exe and name == "codex":
-        candidates = sorted((Path(env.get("LOCALAPPDATA", "")) / "OpenAI/Codex/bin").glob("*/codex.exe"),
+        candidates = sorted((Path(os.environ.get("LOCALAPPDATA", "")) / "OpenAI/Codex/bin").glob("*/codex.exe"),
                             key=lambda p: p.stat().st_mtime, reverse=True)
         exe = str(candidates[0]) if candidates else None
     if not exe:

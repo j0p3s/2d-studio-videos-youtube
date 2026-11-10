@@ -9,7 +9,7 @@ A one-click Windows installer plus a desktop GUI for faceless YouTube videos. Sc
 - **English-policy validation:** 13 Python tests (provider + language pipeline) pass; GUI smoke test verifies saved Portuguese/ElevenLabs settings migrate to English Microsoft Neural. Include `language_policy.py` alongside `studio_gui.py` and `ai_providers.py` in manual updates. Shared ScriptForge skill also states the English requirement. Live Microsoft Andrew Multilingual and Guy English speech generation succeeded; the plain Andrew variant returned NoAudioReceived despite being listed, so it is not offered. No atempo processing is applied to normal generated voiceovers.
 - **Done and pushed:** the installer, launcher and GUI (Setup / Script / Voiceover / Animate / Upload), ElevenLabs as an option, multi-pass "parts", a character-style picker, a real progress bar (stage, %, elapsed, ETA), passage-based voiceover with 3 at a time, and the **⚡ Auto** button (ideas → script → voice → animation → thumbnail, then waits for **Publish**).
 - **Auto and project isolation:** Auto offers Start fresh, Continue this project or Cancel when work exists. A fresh start resets after confirming the summary. Writing a new idea creates its own project and drops previous media/upload references; Revise keeps the existing project.
-- **Installed copy:** `%USERPROFILE%\2D-Animation-Studio`, updated by copying the changed app files (including `app/video_encoder.mjs`) and rerunning `patch_kit.py`. The user is logged in to the Claude CLI, and script generation works.
+- **Portable install:** the folder containing the .cmd launchers is now the only studio root. Local settings.json, youtube/, work/, growkaz-stickman-studio/, .claude/, .codex/, .runtime/, .cache/, .tools/ and .venv/. Old user-profile data is copied without overwriting destination files; old installation remains a backup. AI logins use local configuration and need signing in again.
 - **Adaptive GPU encoding (2026-11-10):** probes NVIDIA NVENC, Intel Quick Sync, then AMD AMF at the actual output resolution; falls back to CPU x264. A failed GPU render waits for workers to finish and retries every part on CPU, avoiding mixed encoder output. Chrome requests the high-performance GPU on Windows; frame capture defaults to JPEG for video, PNG for stills. Audio processing and scene logic stay on CPU; concatenation and final mux copy the video stream.
 - **GPU validation:** three encoder-selection tests pass; fresh-kit patching, repeat patching and Node syntax checks pass. On this PC, NVENC produced a 1920×1080 H.264 preview with two workers; a forced CPU preview also succeeded. The selected test project had missing scene files, so these verify encoding rather than complete scene output. Intel/AMD hardware and an actual mid-render GPU failure have not been tested on hardware. No new full-video speed benchmark was taken.
 - **Codex quality test (2026-11-10):** script and full animation generated through the new Codex adapter, using saved ChatGPT authentication. Project `projects/codex-two-minute-rule-quality-20261110`, title "O truque dos dois minutos", pt-PT Edge Duarte narration, 22 shots, 16:9 1920×1080, 24 fps, exactly 60.000 s / 1,440 frames, H.264 + AAC. Generated low-volume music and 13 SFX cues. Full frame render used NVENC at about 47 fps / 31 s (excludes model work and audio mix). The final MP4 decodes without errors. Contact sheet and final frame reviewed: consistent blue-clothed character and legible overlays, but several compositions reuse the desk set. Original narration was slowed with atempo=0.81 and padded to 60 s; SRT timings were scaled to match. Original narration TXT is retained in the project. Video not uploaded. This supersedes the earlier missing-scene preview limitation for NVIDIA full-video validation, but does not establish a CPU/GPU speed comparison.
@@ -42,7 +42,7 @@ A one-click Windows installer plus a desktop GUI for faceless YouTube videos. Sc
 - **YouTube token loaded with the app's `SCOPES`:** the refresh asked for `youtube.readonly`, which the token never had (it has the broader `youtube` scope), so Google answered `invalid_scope`. Now it loads the scopes the token was actually granted (`_scopes_ok`).
 
 ## 5. Files that matter
-- `Install-2D-Studio.cmd` — winget tools, Claude CLI, copies the kit and skills to `~/.claude/skills`, runs patch_kit, npm, pip, shortcut.
+- `Install-2D-Studio.cmd` — provisions the kit, local skills, local npm tools and a local Python environment beside itself. Uses existing shared prerequisite executables.
 - `Launch-2D-Studio.cmd` — starts the GUI with the Python in `python.txt`.
 - `app/studio_gui.py` — the whole app. Key spots:
   - `_find_home` (resolve installed kit)
@@ -60,7 +60,7 @@ A one-click Windows installer plus a desktop GUI for faceless YouTube videos. Sc
 - Provider checks: `python -m unittest discover -s app -p test_ai_providers.py`; Python 3.12 GUI construction smoke test. Codex is authenticated through ChatGPT on this PC. Gemini CLI is installed but requires user authentication; no successful Gemini model call has been verified. Text-only modes are Codex read-only / Gemini plan. Animation defaults are workspace-write / auto-edit; Full auto explicitly enables broader execution. Gemini trusts the working directory only for the invocation.
 - `app/skills/scriptforge/SKILL.md` — the PDF prompt as a skill; the GUI reads it as its prompt.
 - `plugin/GrowKaz_Stickman.plugin` — a zip; the kit is in `skills/make-2d-video/kit`.
-- Runtime, outside the repo: `~/2D-Animation-Studio/{growkaz-stickman-studio, work/<slug>, youtube/token.json, settings.json}`.
+- Runtime is now beside the launchers, gitignored. No runtime fallback to the legacy user-profile installation.
 
 ## 6. Next steps
 1. Run a 6–10 minute video (Parts: Auto → about 3–4 passes) and check that the style stays consistent across passes. This is the one part of the pipeline not yet run for real.
@@ -70,14 +70,16 @@ A one-click Windows installer plus a desktop GUI for faceless YouTube videos. Sc
 
 ## 7. Open questions / gotchas
 - Line numbers above will drift; search by function name.
-- After editing the repo, copy changed app files to `~/2D-Animation-Studio/app/`, including `video_encoder.mjs` when updating the patcher or encoder. Run `python app/patch_kit.py <installed-kit-path>` from the installed app's parent folder. The installer already copies the entire app directory.
+- Edit app files in this folder and restart its launcher. Reapply app/patch_kit.py to the local growkaz-stickman-studio when the patcher changes.
 - Encoder override: `STUDIO_ENCODER=auto|cpu|gpu|nvenc|qsv|amf`, or renderer `--encoder` with the same values. Explicit GPU choices still fall back to CPU if unavailable. `--gl swiftshader` controls software drawing separately from video encoding. GPU quality settings approximate x264 and file sizes may differ.
 - `settings.json` holds the ElevenLabs key in plain text (it's gitignored). Never commit `token.json` or `client_secret.json`.
 - Animate's ETA before the render stage is a pace estimate; during the render it's exact.
-- To see what a headless Animate run is doing (or why it went quiet), read its session log: `~/.claude/projects/C--Users-Joao-2D-Animation-Studio-growkaz-stickman-studio/*.jsonl`, newest file. The log only updates when a step finishes, so a quiet log can mean Claude is thinking. Check for live `node render.mjs` / Chrome processes before calling it stuck.
+- Headless Claude logs now live in the local .claude/projects directory; check live render/Chrome processes before diagnosing a quiet log as a stall.
 - That session-log path applies to Claude only. For Codex/Gemini, use the GUI animation log and their own CLI session facilities; all providers report tool activity through the app and use the same filesystem-based render progress.
 - The user's context-mode plugin also runs inside headless Animate runs and blocks reading images and large files directly.
 - The running GUI keeps the code it started with. After copying `app/*.py`, restart the app to pick up the change.
 - Include `ai_providers.py` when deploying GUI changes. Install/sign-in buttons for Codex/Gemini are on Setup. CLI credentials remain in vendor-managed storage; never copy them into the repo. There is no automatic cross-provider fallback, so quality tests identify the provider actually used.
 - Driving the GUI with computer use: the window belongs to `pythonw.exe`, which Windows lists as "IDLE (Python 3.12 64-bit)". `open_application` on that name opens a real IDLE shell too, so close it.
 - The GrowKaz plugin and the PDF are third-party. The repo is private; check the licence before making it public.
+
+- **Portable migration (2026-11-10):** app/portable_paths.py copies missing legacy data and rebases copied JSON paths; installed skills are local. Environment overrides are child-local; existing personal provider configs remain untouched. Launch from the current folder after closing older GUI instances.
