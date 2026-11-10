@@ -4,6 +4,7 @@ Pipeline:  ScriptForge (ideas + script, via Claude Code)  ->  voiceover (edge-tt
            ->  GrowKaz Stickman Studio animation (Claude Code runs the make-2d-video skill)
            ->  thumbnail  ->  YouTube upload (YouTube Data API v3).
 """
+import hashlib
 import json
 import os
 import queue
@@ -12,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 import traceback
 import webbrowser
 from datetime import datetime, timezone
@@ -249,12 +251,17 @@ class Studio(ctk.CTk):
         bar.grid_columnconfigure(1, weight=1)
         self.lbl_status = ctk.CTkLabel(bar, text="Ready", anchor="w", text_color="#aab2bf")
         self.lbl_status.grid(row=0, column=0, padx=16, pady=10, sticky="w")
-        self.progress = ctk.CTkProgressBar(bar, height=8, progress_color=ACCENT)
+        self.progress = ctk.CTkProgressBar(bar, height=10, progress_color=ACCENT)
         self.progress.grid(row=0, column=1, padx=10, sticky="ew")
         self.progress.set(0)
+        self.lbl_pct = ctk.CTkLabel(bar, text="", width=230, anchor="e", text_color="#d6dbe3",
+                                    font=ctk.CTkFont(family="Consolas", size=12))
+        self.lbl_pct.grid(row=0, column=2, padx=(0, 6))
         self.btn_stop = ctk.CTkButton(bar, text="■ Stop", width=80, fg_color="#7f1d1d", hover_color="#991b1b",
                                       state="disabled", command=self.stop_job)
-        self.btn_stop.grid(row=0, column=2, padx=12)
+        self.btn_stop.grid(row=0, column=3, padx=12)
+        self._job = None
+        self._cancel = False
 
     def show(self, key):
         self.pages[key].tkraise()
@@ -309,15 +316,67 @@ class Studio(ctk.CTk):
     def status(self, text):
         self.ui(lambda: self.lbl_status.configure(text=text))
 
-    def run_job(self, label, fn, done=None):
+    # ------------------------------------------------------------------ progress
+    @staticmethod
+    def _fmt_t(s):
+        s = int(max(0, s))
+        return f"{s // 3600}h{s % 3600 // 60:02d}m" if s >= 3600 else f"{s // 60}m{s % 60:02d}s"
+
+    def prog(self, frac=None, text=None, eta=None, reset=False):
+        """Thread-safe progress update. frac 0..1 only moves forward (unless reset); text = current stage;
+        eta = seconds left when the step knows it (e.g. the renderer), otherwise estimated from the pace."""
+        j = self._job
+        if not j:
+            return
+        if frac is not None:
+            frac = max(0.0, min(1.0, float(frac)))
+            j["frac"] = frac if reset else max(j["frac"], frac)
+        if text is not None:
+            j["text"] = text
+        j["eta"] = eta
+        self.ui(self._paint_progress)
+
+    def _paint_progress(self):
+        j = self._job
+        if not j:
+            return
+        el = time.time() - j["t0"]
+        self.lbl_status.configure(text=f"{j['label']} — {j['text']}" if j["text"] else j["label"] + " …")
+        if j["indet"]:
+            self.lbl_pct.configure(text=f"{self._fmt_t(el)} elapsed")
+            return
+        f = j["frac"]
+        self.progress.set(f)
+        eta = j.get("eta")
+        if eta is None and f >= 0.03 and el > 8:
+            eta = el * (1 - f) / f
+        self.lbl_pct.configure(text=f"{f * 100:4.0f}%  ·  {self._fmt_t(el)}"
+                               + (f"  ·  ~{self._fmt_t(eta)} left" if eta is not None and f < 1 else ""))
+
+    def _tick(self):
+        if self._job and self.busy:
+            self._paint_progress()
+            self.after(1000, self._tick)
+
+    def check_cancel(self):
+        if self._cancel:
+            raise RuntimeError("Stopped.")
+
+    def run_job(self, label, fn, done=None, indeterminate=False):
         if self.busy:
             messagebox.showinfo("Busy", "Another task is running. Wait for it or press Stop.")
             return
         self.busy = True
-        self.lbl_status.configure(text=label + " …")
-        self.progress.configure(mode="indeterminate")
-        self.progress.start()
+        self._cancel = False
+        self._job = {"label": label, "t0": time.time(), "frac": 0.0, "text": "", "eta": None, "indet": indeterminate}
+        self.progress.configure(mode="indeterminate" if indeterminate else "determinate")
+        if indeterminate:
+            self.progress.start()
+        else:
+            self.progress.set(0)
         self.btn_stop.configure(state="normal")
+        self._paint_progress()
+        self.after(1000, self._tick)
 
         def worker():
             err, res = None, None
@@ -328,27 +387,33 @@ class Studio(ctk.CTk):
                 traceback.print_exc()
 
             def finish():
+                el = time.time() - self._job["t0"] if self._job else 0
                 self.busy = False
                 self.proc = None
+                self._job = None
                 self.progress.stop()
                 self.progress.configure(mode="determinate")
-                self.progress.set(0 if err else 1)
                 self.btn_stop.configure(state="disabled")
                 if err:
-                    self.lbl_status.configure(text=f"{label}: failed")
-                    messagebox.showerror(label, str(err)[:1500])
+                    self.lbl_status.configure(text=f"{label}: {'stopped' if self._cancel else 'failed'}")
+                    self.lbl_pct.configure(text=f"after {self._fmt_t(el)}")
+                    if not self._cancel:
+                        messagebox.showerror(label, str(err)[:1500])
                 else:
+                    self.progress.set(1)
                     self.lbl_status.configure(text=f"{label}: done")
+                    self.lbl_pct.configure(text=f"100%  ·  took {self._fmt_t(el)}")
                     if done:
                         done(res)
             self.ui(finish)
         threading.Thread(target=worker, daemon=True).start()
 
     def stop_job(self):
+        self._cancel = True
         if self.proc and self.proc.poll() is None:
             subprocess.run(["taskkill", "/PID", str(self.proc.pid), "/T", "/F"], capture_output=True,
                            creationflags=NO_WINDOW)
-            self.status("Stopped")
+        self.status("Stopping…")
 
     def run_cmd(self, cmd, cwd=None, stdin_text=None, on_line=None):
         self.proc = subprocess.Popen(
@@ -363,17 +428,24 @@ class Studio(ctk.CTk):
                 on_line(line.rstrip("\n"))
         return self.proc.wait()
 
-    def ask_claude(self, prompt, box=None, tools=None, full_auto=False, cwd=None):
-        """Run `claude -p` headless, stream progress into box, return the final result text."""
+    def ask_claude(self, prompt, box=None, tools=None, full_auto=False, cwd=None, expect_chars=None, on_tool=None):
+        """Run `claude -p` headless, stream progress into box, return the final result text.
+        expect_chars: roughly how long the answer is, so the bar can follow the text as it is written.
+        on_tool(name, input): called for every tool Claude uses (the Animate page uses it for stages)."""
         exe = claude_exe()
         if not exe:
             raise RuntimeError("Claude Code CLI not found. Go to Setup and install / log in.")
         cmd = [exe, "-p", "--output-format", "stream-json", "--verbose"]
+        if expect_chars:
+            cmd.append("--include-partial-messages")
         if full_auto:
             cmd.append("--dangerously-skip-permissions")
         elif tools:
             cmd += ["--allowedTools", ",".join(tools)]
         result = {"text": "", "error": False}
+        written = {"n": 0}
+        if expect_chars:
+            self.prog(0.02, "starting Claude")
 
         def on_line(line):
             if not line.strip():
@@ -385,6 +457,20 @@ class Studio(ctk.CTk):
                     self.log(box, line)
                 return
             t = ev.get("type")
+            if t == "stream_event" and expect_chars:
+                e = ev.get("event", {})
+                d = e.get("delta", {}) if e.get("type") == "content_block_delta" else {}
+                if d.get("type") == "text_delta":
+                    written["n"] += len(d.get("text", ""))
+                    n = written["n"]
+                    self.prog(min(0.97, 0.06 + 0.91 * n / expect_chars), f"writing… {n // 6:,} words")
+                elif d.get("type") == "thinking_delta":
+                    self.prog(0.05, "thinking…")
+                return
+            if t == "assistant" and on_tool:
+                for c in ev.get("message", {}).get("content", []):
+                    if c.get("type") == "tool_use":
+                        on_tool(c.get("name", ""), c.get("input", {}))
             if t == "assistant" and box is not None:
                 for c in ev.get("message", {}).get("content", []):
                     if c.get("type") == "text" and c.get("text", "").strip():
@@ -393,7 +479,6 @@ class Studio(ctk.CTk):
                         inp = c.get("input", {})
                         detail = inp.get("command") or inp.get("file_path") or inp.get("skill") or inp.get("pattern") or ""
                         self.log(box, f"🔧 {c.get('name')}: {str(detail)[:160]}")
-                        self.status(f"Claude → {c.get('name')} {str(detail)[:70]}")
             elif t == "result":
                 result["text"] = ev.get("result", "") or ""
                 result["error"] = bool(ev.get("is_error"))
@@ -454,7 +539,11 @@ class Studio(ctk.CTk):
         self.setup_log.pack(fill="both", expand=True, pady=(8, 0))
 
     def check_setup(self):
+        n_checks = {"i": 0}
+
         def probe(cmd):
+            n_checks["i"] += 1
+            self.prog(n_checks["i"] / 6, f"checking {Path(cmd[0]).stem}")
             try:
                 r = subprocess.run(cmd, capture_output=True, text=True, timeout=20, env=ENV, creationflags=NO_WINDOW)
                 return (r.stdout or r.stderr).strip().splitlines()[0] if r.returncode == 0 else None
@@ -503,13 +592,27 @@ class Studio(ctk.CTk):
     def doctor_fix(self):
         def work():
             self.log(self.setup_log, "> pip install (app libraries)")
+            seen = {"n": 0}
+
+            def pip_line(l):   # ~60 packages get resolved in total; each one is a step
+                self.log(self.setup_log, l)
+                if l.startswith(("Collecting", "Requirement already satisfied")):
+                    seen["n"] += 1
+                    self.prog(min(0.55, 0.55 * seen["n"] / 60), f"Python packages ({seen['n']} checked)")
+                elif l.startswith("Installing collected"):
+                    self.prog(0.58, "installing Python packages")
             self.run_cmd([PY, "-m", "pip", "install", "--upgrade", "numpy", "scipy", "faster-whisper", "edge-tts",
                           "customtkinter", "pillow", "google-api-python-client", "google-auth-oauthlib",
-                          "google-auth-httplib2"], on_line=lambda l: self.log(self.setup_log, l))
+                          "google-auth-httplib2"], on_line=pip_line)
+            self.check_cancel()
             if STUDIO.exists():
+                self.prog(0.62, "applying the browser/progress patch")
+                self.run_cmd([PY, str(APP_DIR / "patch_kit.py"), str(STUDIO)], on_line=lambda l: self.log(self.setup_log, l))
+                self.prog(0.7, "studio doctor (npm, browser, Whisper)")
                 self.log(self.setup_log, "> python tools/doctor.py --install")
                 self.run_cmd([PY, "tools/doctor.py", "--install"], cwd=str(STUDIO),
-                             on_line=lambda l: self.log(self.setup_log, l))
+                             on_line=lambda l: (self.log(self.setup_log, l),
+                                                l.startswith(">>>") and self.prog(0.8, l[4:60])))
             else:
                 self.log(self.setup_log, "Studio kit missing — run the installer (Re-run installer).")
         self.run_job("Auto-fix", work, lambda _: self.check_setup())
@@ -534,9 +637,28 @@ class Studio(ctk.CTk):
             return
 
         def work():
-            self.run_cmd(["node", "render.mjs", "--project", "examples/reaction-time", "--sheet", "--scale", "0.3"],
-                         cwd=str(STUDIO), on_line=lambda l: self.log(self.setup_log, l))
-            sheet = STUDIO / "examples" / "reaction-time" / "build" / "sheets" / "sheet_01.png"
+            sheets = STUDIO / "examples" / "reaction-time" / "build" / "sheets"
+            shutil.rmtree(sheets, ignore_errors=True)
+            try:   # the example has 14 shots; count the stills as they appear
+                total = len(json.loads((STUDIO / "examples/reaction-time/story/shots.json").read_text(encoding="utf-8"))["shots"])
+            except Exception:
+                total = 14
+            stop = threading.Event()
+
+            def watch():
+                self.prog(0.03, "starting the browser")
+                while not stop.wait(0.5):
+                    n = len(list(sheets.glob("s[0-9]*.png"))) if sheets.is_dir() else 0
+                    if n:
+                        self.prog(0.05 + 0.85 * n / total, f"rendering still {n}/{total}")
+            threading.Thread(target=watch, daemon=True).start()
+            try:
+                self.run_cmd(["node", "render.mjs", "--project", "examples/reaction-time", "--sheet", "--scale", "0.3"],
+                             cwd=str(STUDIO), on_line=lambda l: self.log(self.setup_log, l))
+            finally:
+                stop.set()
+            self.prog(0.97, "contact sheet")
+            sheet = sheets / "sheet_01.png"
             if not sheet.exists():
                 raise RuntimeError("No contact sheet was produced — see the log.")
             return sheet
@@ -627,7 +749,7 @@ class Studio(ctk.CTk):
                   + 'Return ONLY a JSON array of exactly 10 objects: [{"title": "...", "hook": "...", "format": "listicle|deep-dive|truth-about|countdown|story"}]. No other text.')
 
         def work():
-            return extract_json(self.ask_claude(prompt, cwd=HOME), "[")
+            return extract_json(self.ask_claude(prompt, cwd=HOME, expect_chars=1900), "[")
 
         def done(ideas):
             self.ideas = ideas
@@ -678,7 +800,8 @@ class Studio(ctk.CTk):
         prompt = (f"{scriptforge_prompt()}\n\n---\nYou are running inside a desktop app, not a chat. The user picked main "
                   f"niche {main}, sub-niche {sub}, and chose this idea:\nTitle: {idea.get('title')}\nHook: {idea.get('hook')}\n"
                   f"Do STEP 3 now. {length}\n\n{self.SCRIPT_FORMAT}")
-        self._script_request(prompt, idea.get("title", "video"), shorts)
+        words = 150 if shorts else 525 if choice == "3-4 min" else int(choice.split()[0]) * 150
+        self._script_request(prompt, idea.get("title", "video"), shorts, words)
 
     def revise_script(self):
         req = self.ent_revise.get().strip()
@@ -688,11 +811,15 @@ class Studio(ctk.CTk):
         shorts = "short" in req.lower() or self.s.get("shorts", False)
         prompt = (f"{scriptforge_prompt()}\n\n---\nYou are running inside a desktop app. Here is the current script:\n\n{cur}\n\n"
                   f"The user asks: {req}\nRewrite it accordingly, keeping the ScriptForge rules.\n\n{self.SCRIPT_FORMAT}")
-        self._script_request(prompt, self.s.get("title", "video"), shorts)
+        words = 150 if "short" in req.lower() else max(150, len(self.s.get("narration", cur).split()))
+        self._script_request(prompt, self.s.get("title", "video"), shorts, words)
 
-    def _script_request(self, prompt, fallback_title, shorts):
+    def _script_request(self, prompt, fallback_title, shorts, words=525):
+        # SCRIPT (narration + visual cues + headers) + NARRATION again + META JSON ≈ 2.4× the spoken text
+        expect = int(words * 6 * 2.4 + 900)
+
         def work():
-            return self.ask_claude(prompt, cwd=HOME)
+            return self.ask_claude(prompt, cwd=HOME, expect_chars=expect)
 
         def done(text):
             parts = re.split(r"^===(SCRIPT|NARRATION|META)===\s*$", text, flags=re.M)
@@ -858,7 +985,7 @@ class Studio(ctk.CTk):
             self.settings.update({"el_key": self.ent_el_key.get().strip(), "el_voices_names": names,
                                   "el_voices_ids": [self.el_voices[n] for n in names]})
             save_settings(self.settings)
-        self.run_job("Loading ElevenLabs voices", work, done)
+        self.run_job("Loading ElevenLabs voices", work, done, indeterminate=True)
 
     @staticmethod
     def _chunks(text, limit=4000):
@@ -881,27 +1008,118 @@ class Studio(ctk.CTk):
         self.settings.update({"el_key": self.ent_el_key.get().strip(), "el_voice_name": name})
         save_settings(self.settings)
         parts = self._chunks(text)
+        cache = d / "voice_parts"
+        cache.mkdir(exist_ok=True)
         files = []
-        for i, chunk in enumerate(parts, 1):
-            self.status(f"ElevenLabs: part {i}/{len(parts)}")
-            audio = self._el_request(f"/v1/text-to-speech/{vid}?output_format=mp3_44100_128",
-                                     {"text": chunk, "model_id": "eleven_multilingual_v2",
-                                      "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}})
-            f = d / f"voice_part{i:02d}.mp3"
-            f.write_bytes(audio)
+        for i, chunk in enumerate(parts):
+            self.check_cancel()
+            self.prog(i / len(parts), f"ElevenLabs passage {i + 1}/{len(parts)}")
+            f = cache / ("el_" + hashlib.sha256((vid + "\n" + chunk).encode()).hexdigest()[:24] + ".mp3")
+            if not f.exists() or f.stat().st_size == 0:
+                audio = self._el_request(f"/v1/text-to-speech/{vid}?output_format=mp3_44100_128",
+                                         {"text": chunk, "model_id": "eleven_multilingual_v2",
+                                          "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}})
+                f.write_bytes(audio)
             files.append(f)
+        self.prog(0.97, "Joining passages")
+        return self._join_mp3(files, out)
+
+    @staticmethod
+    def _speech_chunks(text, limit=1400):
+        """Same splitting as reddit-video-generator's narration.py: ~1400-char passages that end on a
+        sentence when possible. One long request gets cut off by the Edge voice service."""
+        words = text.split()
+        chunks, current = [], []
+        for word in words:
+            if current and len(" ".join(current + [word])) > limit:
+                chunks.append(" ".join(current))
+                current = []
+            current.append(word)
+            if len(" ".join(current)) > limit * .65 and word.endswith((".", "!", "?")):
+                chunks.append(" ".join(current))
+                current = []
+        if current:
+            chunks.append(" ".join(current))
+        return chunks
+
+    VOICE_WORKERS = 3   # passages voiced at the same time (Edge streams ~real-time, so this is ~3x faster)
+
+    def _make_voice_edge(self, text, d, out, voice, rate):
+        """Edge neural voice in passages (as in reddit-video-generator): cached, 3 tries each,
+        VOICE_WORKERS passages at once, joined in order."""
+        import asyncio
+        import edge_tts
+        rate_s = f"{rate:+d}%"
+        parts = self._speech_chunks(text)
+        if not parts:
+            raise RuntimeError("The narration is empty.")
+        cache = d / "voice_parts"
+        cache.mkdir(exist_ok=True)
+        n = len(parts)
+        files = [cache / (hashlib.sha256((voice + "\n" + rate_s + "\n" + p).encode()).hexdigest()[:24] + ".mp3")
+                 for p in parts]
+        state = {"done": sum(1 for f in files if f.exists() and f.stat().st_size > 0), "retries": 0}
+
+        def report():
+            extra = f" · {state['retries']} retried" if state["retries"] else ""
+            self.prog(state["done"] / n * 0.95, f"voice passages {state['done']}/{n} done "
+                                                f"({min(self.VOICE_WORKERS, n - state['done'])} at a time){extra}")
+
+        async def one(i, sem):
+            mp3 = files[i]
+            if mp3.exists() and mp3.stat().st_size > 0:
+                return
+            async with sem:
+                for attempt in range(3):
+                    self.check_cancel()
+                    partial = mp3.with_name(mp3.stem + ".partial.mp3")
+                    try:
+                        await asyncio.wait_for(edge_tts.Communicate(parts[i], voice=voice, rate=rate_s)
+                                               .save(str(partial)), timeout=180)
+                        if not partial.is_file() or partial.stat().st_size == 0:
+                            raise RuntimeError("no speech received")
+                        os.replace(partial, mp3)
+                        break
+                    except Exception as exc:
+                        partial.unlink(missing_ok=True)
+                        if self._cancel:
+                            raise RuntimeError("Stopped.")
+                        if attempt == 2:
+                            raise RuntimeError(f"The voice service failed on passage {i + 1} of {n} after 3 tries "
+                                               f"({exc}).\n\nPassage starts: “{parts[i][:140]}…”\n\nCheck your internet "
+                                               "and try again — finished passages are cached, so it continues where it stopped.")
+                        state["retries"] += 1
+                        report()
+                        await asyncio.sleep(attempt + 1)
+            state["done"] += 1
+            report()
+
+        async def run_all():
+            sem = asyncio.Semaphore(self.VOICE_WORKERS)
+            tasks = [asyncio.create_task(one(i, sem)) for i in range(n)]
+            try:
+                await asyncio.gather(*tasks)
+            except BaseException:
+                for t in tasks:
+                    t.cancel()
+                raise
+        report()
+        asyncio.run(run_all())
+        self.prog(0.97, "joining passages")
+        return self._join_mp3(files, out)
+
+    def _join_mp3(self, files, out):
         if len(files) == 1:
-            shutil.move(str(files[0]), out)
-        else:
-            lst = d / "voice_parts.txt"
-            lst.write_text("".join(f"file '{f.as_posix()}'\n" for f in files), encoding="utf-8")
-            r = subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(lst), "-c:a", "libmp3lame",
-                                "-b:a", "192k", str(out)], capture_output=True, env=ENV, creationflags=NO_WINDOW)
-            if r.returncode != 0:
-                raise RuntimeError("ffmpeg could not join the voice parts.")
-            for f in files:
-                f.unlink(missing_ok=True)
-            lst.unlink(missing_ok=True)
+            shutil.copy2(files[0], out)
+            return out
+        lst = Path(out).with_name("voice_parts.txt")
+        lst.write_text("".join(f"file '{Path(f).as_posix()}'\n" for f in files), encoding="utf-8")
+        r = subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", str(lst),
+                            "-c:a", "libmp3lame", "-b:a", "192k", str(out)],
+                           capture_output=True, text=True, env=ENV, creationflags=NO_WINDOW)
+        lst.unlink(missing_ok=True)
+        if r.returncode != 0:
+            raise RuntimeError("ffmpeg could not join the voice passages:\n" + (r.stderr or "")[-400:])
         return out
 
     def _sync_voice_page(self):
@@ -938,15 +1156,10 @@ class Studio(ctk.CTk):
         use_el = self.opt_engine.get() == "ElevenLabs"
 
         def work():
+            (d / "voiceover.srt").unlink(missing_ok=True)   # leftover from the old single-request method
             if use_el:
                 return self._make_voice_elevenlabs(text, d, out)
-            rc = self.run_cmd([PY, "-m", "edge_tts", "--file", str(d / "script.txt"), "--voice", voice,
-                               f"--rate={rate:+d}%", "--write-media", str(out),
-                               "--write-subtitles", str(d / "voiceover.srt")],
-                              on_line=lambda l: self.status(l[:120]))
-            if rc != 0 or not out.exists():
-                raise RuntimeError("edge-tts failed (needs internet). Try again or use your own recording.")
-            return out
+            return self._make_voice_edge(text, d, out, voice, rate)
 
         def done(o):
             self.s.update({"voice": str(o), "lang": "detect it from the script text" if use_el else voice.split("-")[0]})
@@ -1145,7 +1358,20 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
         tools = ["Bash", "Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "Skill", "TodoWrite"]
 
         def work():
-            res = self.ask_claude(prompt, box=self.anim_log, tools=tools, full_auto=bool(self.chk_auto.get()), cwd=STUDIO)
+            out_dir = STUDIO / "projects" / slug / "build" / "char_styles"
+            stop = threading.Event()
+            self._anim_hint, t0 = "Claude is reading the skill", time.time()
+
+            def watch():   # 4 stills to make; each one that appears is a quarter of the work
+                while not stop.wait(1.5):
+                    n = len([p for p in out_dir.glob("*.png") if p.stat().st_mtime >= t0 - 1]) if out_dir.is_dir() else 0
+                    self.prog(0.1 + 0.85 * min(n, 4) / 4, f"{n}/4 designs rendered · {self._anim_hint}")
+            threading.Thread(target=watch, daemon=True).start()
+            try:
+                res = self.ask_claude(prompt, box=self.anim_log, tools=tools, full_auto=bool(self.chk_auto.get()),
+                                      cwd=STUDIO, on_tool=self._anim_tool_hint)
+            finally:
+                stop.set()
             opts = []
             for m in re.finditer(r"CHAR_STYLE:\s*(\d+)\s*\|\s*([^|]+)\|\s*([^|]+)\|\s*(.+)", res):
                 opts.append((m.group(1), m.group(2).strip(), m.group(3).strip(), m.group(4).strip().strip("`\"")))
@@ -1204,10 +1430,20 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
 
         def work():
             res = ""
-            for i, pr in enumerate(prompts, 1):
-                if len(prompts) > 1:
-                    self.log(self.anim_log, f"\n━━━━━━━━ Pass {i} of {len(prompts)} ━━━━━━━━")
-                res = self.ask_claude(pr, box=self.anim_log, tools=tools, full_auto=full, cwd=STUDIO)
+            t0 = time.time()
+            stop = threading.Event()
+            self._anim_hint = "Claude is reading the skill"
+            threading.Thread(target=self._watch_pipeline, args=(self.s["slug"], t0, stop), daemon=True).start()
+            try:
+                for i, pr in enumerate(prompts, 1):
+                    self.check_cancel()
+                    if len(prompts) > 1:
+                        self.log(self.anim_log, f"\n━━━━━━━━ Pass {i} of {len(prompts)} ━━━━━━━━")
+                    self._anim_pass = f"pass {i}/{len(prompts)} · " if len(prompts) > 1 else ""
+                    res = self.ask_claude(pr, box=self.anim_log, tools=tools, full_auto=full, cwd=STUDIO,
+                                          on_tool=self._anim_tool_hint)
+            finally:
+                stop.set()
             m = re.search(r"FINAL_VIDEO:\s*(.+\.mp4)", res)
             path = m.group(1).strip().strip('"`') if m else None
             if not path or not Path(path).exists():
@@ -1225,6 +1461,91 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
                 messagebox.showwarning("Animate", "Claude finished but no MP4 was found. Read the log, "
                                                   "or continue in the interactive Claude Code window.")
         self.run_job("Making the video", work, done)
+
+    # ---- Animate progress: read the pipeline's own files (files are the truth in the GrowKaz skill)
+    _anim_hint, _anim_pass = "", ""
+    HINTS = [("transcribe.py", "timestamps (Whisper)"), ("parse_script.py", "reading timestamps"),
+             ("new_project.py", "creating the project"), ("beats.py", "beat sheet"),
+             ("doctor.py", "checking tools"), ("verify_kit.py", "checking the kit"),
+             ("--styles", "style samples"), ("--sheet", "checking contact sheets"), ("--stills", "checking stills"),
+             ("--from", "preview clip"), ("mix.py", "music, SFX & final mix"), ("render.mjs", "rendering")]
+
+    def _anim_tool_hint(self, name, inp):
+        cmd = str(inp.get("command") or "")
+        hint = next((h for k, h in self.HINTS if k in cmd), None)
+        if not hint:
+            f = str(inp.get("file_path") or "").replace("\\", "/")
+            if name in ("Write", "Edit", "MultiEdit") and "/scenes/" in f:
+                hint = "writing " + f.rsplit("/", 1)[-1]
+            elif f.endswith(("bible.md", "shots.json", "cast.js")):
+                hint = "story plan (" + f.rsplit("/", 1)[-1] + ")"
+            elif name == "Read" and f.endswith(".png"):
+                hint = "looking at renders"
+            elif name == "Skill":
+                hint = "loading the skill"
+        if hint:
+            self._anim_hint = hint
+
+    def _pipeline_state(self, slug, t0):
+        """(fraction, stage text, eta seconds or None) from the project folder."""
+        P = STUDIO / "projects" / slug
+        fresh = lambda p: p.exists() and p.stat().st_mtime >= t0 - 1
+        frac, stage, eta = 0.01, "starting", None
+        if (P / "config.json").exists():
+            frac, stage = 0.03, "project created"
+        tl = P / "timeline"
+        if tl.is_dir() and any(tl.iterdir()):
+            frac, stage = 0.07, "timestamps ready"
+        shots, ids = P / "story" / "shots.json", []
+        if (P / "story" / "bible.md").exists():
+            frac, stage = 0.10, "story plan"
+        try:
+            ids = [s["id"] for s in json.loads(shots.read_text(encoding="utf-8")).get("shots", []) if s.get("scene")]
+        except Exception:
+            pass
+        if ids:
+            frac, stage = 0.12, f"shot list ({len(ids)} shots)"
+        if list((P / "build" / "styles").glob("*.png")) if (P / "build" / "styles").is_dir() else []:
+            frac, stage = 0.14, "style chosen"
+        built = set()
+        for f in (P / "scenes" / "shots").glob("*.js") if (P / "scenes" / "shots").is_dir() else []:
+            try:
+                built |= set(re.findall(r"registerShot\(\s*['\"]([^'\"]+)", f.read_text(encoding="utf-8")))
+            except Exception:
+                pass
+        if ids and built:
+            k = len(built & set(ids))
+            frac, stage = 0.15 + 0.45 * k / len(ids), f"building shots {k}/{len(ids)}"
+        rp = P / "build" / "render_progress.json"
+        if fresh(rp):
+            try:
+                r = json.loads(rp.read_text(encoding="utf-8"))
+                done, total = r.get("done", 0), max(1, r.get("total", 1))
+                rate = done / max(1e-3, (r.get("t", 0) - r.get("t0", 0)) / 1000)
+                if r.get("full"):
+                    frac, stage = 0.60 + 0.32 * done / total, f"rendering frame {done:,}/{total:,} ({rate:.1f} fps)"
+                    eta = (total - done) / rate + 60 if rate > 0 else None
+                else:
+                    stage = f"preview render {done:,}/{total:,} frames"
+            except Exception:
+                pass
+        if fresh(P / "build" / "video_silent.mp4"):
+            frac, stage, eta = 0.92, "video rendered — adding sound", None
+        if fresh(P / "build" / "mix.wav"):
+            frac, stage = max(frac, 0.95), "mixing music & SFX"
+        if any(fresh(f) for f in (P / "out").glob("*.mp4")) if (P / "out").is_dir() else False:
+            frac, stage = 0.98, "final MP4 written — checking it"
+        return frac, stage, eta
+
+    def _watch_pipeline(self, slug, t0, stop):
+        while not stop.is_set():
+            try:
+                frac, stage, eta = self._pipeline_state(slug, t0)
+                hint = self._anim_hint
+                self.prog(frac, f"{self._anim_pass}{stage}" + (f" · {hint}" if hint and hint not in stage else ""), eta)
+            except Exception:
+                pass
+            stop.wait(2)
 
     def interactive_video(self):
         try:
@@ -1392,10 +1713,12 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
         out = self._workdir() / "thumbnail.jpg"
 
         def work():
+            self.prog(0.1, "reading the video length")
             r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", video],
                                capture_output=True, text=True, env=ENV, creationflags=NO_WINDOW)
             dur = float(r.stdout.strip() or 10)
             frame = out.with_suffix(".frame.png")
+            self.prog(0.3, "grabbing the frame")
             subprocess.run(["ffmpeg", "-y", "-ss", f"{dur * pct:.2f}", "-i", video, "-frames:v", "1", str(frame)],
                            capture_output=True, env=ENV, creationflags=NO_WINDOW)
             from PIL import Image, ImageDraw, ImageFont, ImageEnhance
@@ -1427,6 +1750,7 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
                     x = (tw - d.textlength(ln, font=font)) / 2
                     d.text((x, y), ln, font=font, fill="#ffe14d", stroke_width=max(4, size // 12), stroke_fill="black")
                     y += size * 1.08
+            self.prog(0.9, "saving")
             img.save(out, quality=92)
             frame.unlink(missing_ok=True)
             return out
@@ -1468,7 +1792,8 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
                 ch = svc.channels().list(part="snippet", mine=True).execute()
                 items = ch.get("items", [])
                 return items[0]["snippet"]["title"] if items else "(no channel found on this account)"
-            self.run_job("Connecting YouTube", work, lambda name: lbl.configure(text=f"Connected to: {name} ✔"))
+            self.run_job("Connecting YouTube (finish the sign-in in your browser)", work,
+                         lambda name: lbl.configure(text=f"Connected to: {name} ✔"), indeterminate=True)
         ctk.CTkButton(r, text="Connect", fg_color=ACCENT, command=connect).pack(side="left", padx=4)
         lbl = ctk.CTkLabel(win, text=("Connected ✔" if (YT_DIR / "token.json").exists() else ""), text_color=ACCENT)
         lbl.pack(pady=8)
@@ -1525,19 +1850,27 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
 
         def work():
             from googleapiclient.http import MediaFileUpload
+            self.prog(0.01, "signing in to YouTube")
             svc = self._yt_service()
-            media = MediaFileUpload(video, chunksize=8 * 1024 * 1024, resumable=True, mimetype="video/*")
+            size = os.path.getsize(video)
+            media = MediaFileUpload(video, chunksize=4 * 1024 * 1024, resumable=True, mimetype="video/*")
             req = svc.videos().insert(part="snippet,status", body=body, media_body=media)
-            resp = None
-            self.ui(lambda: (self.progress.stop(), self.progress.configure(mode="determinate"), self.progress.set(0)))
+            resp, t_up = None, time.time()
+            self.prog(0.02, f"uploading 0 / {size / 1e6:.0f} MB")
             while resp is None:
+                self.check_cancel()
                 st, resp = req.next_chunk()
                 if st:
                     pr = st.progress()
-                    self.ui(lambda v=pr: (self.progress.set(v), self.lbl_up.configure(text=f"Uploading… {v:.0%}")))
+                    sent = pr * size
+                    speed = sent / max(0.5, time.time() - t_up)
+                    self.prog(0.02 + 0.93 * pr, f"uploading {sent / 1e6:.0f} / {size / 1e6:.0f} MB "
+                              f"({speed / 1e6:.1f} MB/s)", (size - sent) / speed if speed > 0 else None)
+                    self.ui(lambda v=pr: self.lbl_up.configure(text=f"Uploading… {v:.0%}"))
             vid = resp["id"]
             note = ""
             if thumb:
+                self.prog(0.97, "setting the thumbnail")
                 try:
                     svc.thumbnails().set(videoId=vid, media_body=MediaFileUpload(thumb)).execute()
                 except Exception as e:
