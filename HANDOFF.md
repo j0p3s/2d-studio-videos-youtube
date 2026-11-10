@@ -18,6 +18,7 @@ A one-click Windows installer plus a desktop GUI for faceless YouTube videos. Sc
 - **Not yet run for real:** a long video built in several passes ("parts"), 6–10 min.
 
 ## 3. Key decisions (don't re-debate)
+- English voice validation also passed with real audio: Microsoft Andrew Multilingual sample was transcribed exactly in English; the earlier Portuguese test narration was rejected by the import checker. `verify_english_recording` decodes the first 30 seconds through FFmpeg to float32 PCM before Whisper. Direct PyAV decoding failed on this PC with `metadata_errors` incompatibility, so do not replace this path with `decode_audio` without resolving that dependency mismatch.
 - **Provider choice supersedes the earlier Claude-only decision:** the user requested OpenAI/Codex and Gemini alternatives. Scripts and animation now have independent provider/model choices in Setup; Claude is the compatibility default. Offline generation remains out of scope.
 - **No Remotion.** The plugin renders with canvas + three.js in headless Chromium + ffmpeg.
 - **Python 3.12, not `py -3`.** The PC's default is Python 3.15, and faster-whisper's `av` can't build there. The installer picks 3.12/3.11/3.13/3.10 and writes `python.txt`; the launcher uses it.
