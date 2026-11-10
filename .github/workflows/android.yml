@@ -17,6 +17,10 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          cmdline-tools-version: '13114758'
+          log-accepted-android-sdk-licenses: false
       - run: chmod +x gradlew && ./gradlew testDebugUnitTest assembleDebug lintDebug
         working-directory: Adnroid-App
       - uses: actions/upload-artifact@v4
