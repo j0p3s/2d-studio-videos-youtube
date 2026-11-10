@@ -1532,7 +1532,12 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
             return
         full = bool(self.chk_auto.get())
         tools = ["Bash", "Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "Skill", "TodoWrite",
-                 "BashOutput", "KillShell", "KillBash", "Monitor", "TaskOutput", "TaskStop"]
+                 "BashOutput", "KillShell", "KillBash", "Monitor", "TaskOutput", "TaskStop",
+                 # Windows: Claude Code prefers its PowerShell tool; without it every call is denied.
+                 "PowerShell",
+                 # context-mode plugin (if installed) clips long output and points at its own tools,
+                 # so those must be allowed or Claude can't read long logs at all.
+                 "mcp__plugin_context-mode_context-mode"]
         dur = self._voice_duration()
         sel = self.opt_parts.get()
         n = max(1, min(6, round(dur / 150))) if sel == "Auto" else int(sel)
