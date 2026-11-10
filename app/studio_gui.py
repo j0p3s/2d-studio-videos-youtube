@@ -971,7 +971,7 @@ class Studio(ctk.CTk):
         used = self.s.setdefault("used_ideas", [])
         if idea.get("title") and idea["title"] not in used:
             used.append(idea["title"])
-        self._script_request(prompt, idea.get("title", "video"), shorts, words)
+        self._script_request(prompt, idea.get("title", "video"), shorts, words, new_video=True)
 
     def revise_script(self):
         req = self.ent_revise.get().strip()
@@ -984,7 +984,12 @@ class Studio(ctk.CTk):
         words = 150 if "short" in req.lower() else max(150, len(self.s.get("narration", cur).split()))
         self._script_request(prompt, self.s.get("title", "video"), shorts, words)
 
-    def _script_request(self, prompt, fallback_title, shorts, words=525):
+    # Kept when a script for a new idea starts a new project; everything else belongs to the old video.
+    SESSION_KEYS = ("niche_main", "niche_sub", "ideas", "used_ideas")
+
+    def _script_request(self, prompt, fallback_title, shorts, words=525, new_video=False):
+        """new_video: this script is for a new idea, so it gets its own project (slug, voiceover,
+        video, uploads). Revising the current script keeps the current project."""
         # SCRIPT (narration + visual cues + headers) + NARRATION again + META JSON ≈ 2.4× the spoken text
         expect = int(words * 6 * 2.4 + 900)
 
@@ -1001,6 +1006,11 @@ class Studio(ctk.CTk):
             except Exception:
                 meta = {}
             title = meta.get("title") or fallback_title
+            if new_video and self.s.get("slug"):
+                # Start a new project. Reusing the old slug made the new video overwrite the old one's
+                # voiceover in work\ and wipe its finished project folder when Animate ran.
+                self.s = {k: self.s[k] for k in self.SESSION_KEYS if k in self.s}
+                self._clear_upload_page()
             slug = self.s.get("slug") or (slugify(title) + datetime.now().strftime("-%m%d%H%M"))
             self.s.update({"script": script, "narration": narration, "meta": meta, "title": title,
                            "slug": slug, "shorts": shorts})
