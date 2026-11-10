@@ -22,6 +22,10 @@ A one-click setup and desktop app for making faceless, animated, stick-figure Yo
 
 Models are optional: leave the field blank to use the CLI default. Provider and model selections are saved for the next run; each active job keeps the selections it started with. Voiceover, GPU rendering and YouTube upload use the same pipeline for every provider. CLI authentication is managed by the vendor; the app does not copy credentials into its settings.
 
+All generated video content is **English only**, regardless of the language used to give instructions: scripts, narration, metadata, subtitles and on-screen text. This applies to Claude, Codex and Gemini, including revisions and interactive animation prompts. Imported/edited scripts are normalized into English. Edited narration is translated before speech generation when needed; unchanged English narration is preserved.
+
+Speech generation always uses **Microsoft Neural (Edge)** with an English voice; the default is `en-US-AndrewMultilingualNeural`, reading English narration. English US, UK and Australian voice options remain available. Saved Portuguese voices are replaced with the English default, and saved ElevenLabs engine selections reset to Microsoft. ElevenLabs is not offered in the voice-generation UI. Imported recordings are checked for English speech in the first 30 seconds using Whisper; uncertain or non-English recordings are rejected. Old unverified/non-English voice references are cleared from the current pipeline so Auto regenerates speech; the media files remain on disk. Restart the GUI after updating.
+
 Codex and Gemini receive the GrowKaz skill and reference paths explicitly, so animation does not depend on Claude Code being installed. Text tasks request text-only operation in read-only/plan mode. Animation uses Codex workspace-write or Gemini auto-edit; commands requiring extra permission can fail in headless mode. **Full auto** enables the selected agent's unrestricted mode for unattended local rendering. Gemini trusts the current working folder for that invocation. Final publishing still requires the app's Publish action.
 
 The installer provisions the shared GrowKaz skills under `~/.claude/skills` for all three providers. For manual updates, include `app/ai_providers.py` alongside `studio_gui.py`. Run adapter tests with `python -m unittest discover -s app -p test_ai_providers.py`. A missing login, unavailable model or exhausted quota is reported as an error; the app does not silently substitute another provider.
@@ -36,7 +40,7 @@ For a manual app update, copy the changed files from `app` into `%USERPROFILE%\2
 | Step | What it does |
 |---|---|
 | **① Script** | Pick a niche and a length (Shorts up to 12 min) to get 10 ideas from ScriptForge through your selected script provider. Pick one and you get the full script, alternative titles, tags, a description and thumbnail text. Type edit requests to revise it. |
-| **② Voiceover** | Uses free Microsoft Edge neural voices, ElevenLabs (paste your API key, then *Load voices*), or your own recording. |
+| **② Voiceover** | Uses English Microsoft Neural voices, including Andrew, Guy, Aria and Jenny, for every AI provider. You can also import a recording verified as English. |
 | **③ Animate** | Your selected animation agent runs the GrowKaz pipeline: Whisper timestamps, a shot plan, code-drawn 2D/3D scenes, music, sound effects and the final MP4. Long videos are built in several *parts*, one agent pass per section. **Suggest character styles** renders 4 character looks for you to choose from. **Open animation agent** lets you run it interactively instead. |
 | **④ Upload** | Makes a thumbnail from a video frame with big text on it, fills in the title, description and tags from the script, and uploads to YouTube (private, unlisted, public or scheduled). |
 
