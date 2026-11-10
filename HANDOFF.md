@@ -5,7 +5,9 @@ A one-click Windows installer plus a desktop GUI for faceless YouTube videos. Sc
 
 ## 2. Current status
 - **Done and pushed:** the installer, launcher and GUI (Setup / Script / Voiceover / Animate / Upload), ElevenLabs as an option, multi-pass "parts", a character-style picker, a real progress bar (stage, %, elapsed, ETA), passage-based voiceover with 3 at a time, and the **⚡ Auto** button (ideas → script → voice → animation → thumbnail, then waits for **Publish**).
-- **Installed copy:** `%USERPROFILE%\2D-Animation-Studio`, updated by copying `app/*.py` over by hand after each change. The user is logged in to the Claude CLI, and script generation works.
+- **Installed copy:** `%USERPROFILE%\2D-Animation-Studio`, updated by copying the changed app files (including `app/video_encoder.mjs`) and rerunning `patch_kit.py`. The user is logged in to the Claude CLI, and script generation works.
+- **Adaptive GPU encoding (2026-11-10):** probes NVIDIA NVENC, Intel Quick Sync, then AMD AMF at the actual output resolution; falls back to CPU x264. A failed GPU render waits for workers to finish and retries every part on CPU, avoiding mixed encoder output. Chrome requests the high-performance GPU on Windows; frame capture defaults to JPEG for video, PNG for stills. Audio processing and scene logic stay on CPU; concatenation and final mux copy the video stream.
+- **GPU validation:** three encoder-selection tests pass; fresh-kit patching, repeat patching and Node syntax checks pass. On this PC, NVENC produced a 1920×1080 H.264 preview with two workers; a forced CPU preview also succeeded. The selected test project had missing scene files, so these verify encoding rather than complete scene output. Intel/AMD hardware and an actual mid-render GPU failure have not been tested on hardware. No new full-video speed benchmark was taken.
 - **Verified:** voiceover on a real 1,479-word script (8m53s, 10 s with 3 at a time). Self-test render through Chrome: 14/14 stills. `verify_kit` 29/29, doctor all OK.
 - **First real end-to-end run (2026-11-10):** ⚡ Auto on a Shorts video (9:16, 720p, Edge voice) went ideas → script → voiceover → animation → thumbnail with no input, in about 30 min. Result: "Why Motivation Is Lying to You", a 54 s MP4 with audio. Most of the time went into Claude writing and checking 28 shots; the full 1,299-frame render took 87 s. Published as **private** to the channel "The Thought Lab" (https://youtu.be/ZzwRZC0lCG4): processed, with tags and a custom thumbnail (the channel is verified).
 - **Fixed after that run (PRs #2 and #3, merged):** render.mjs hanging ~7 min per failed render, EPERM on `build/stills`, PowerShell and context-mode tools denied in the headless Animate run, and Publish failing with `invalid_scope` (see §4).
@@ -45,6 +47,7 @@ A one-click Windows installer plus a desktop GUI for faceless YouTube videos. Sc
   - `_pipeline_state` L1604 (Animate progress from project files)
   - `_scopes_ok` / `_yt_service` / `upload`
 - `app/patch_kit.py` — patches the installed kit: render.mjs browser fallback, `build/render_progress.json`, exit on failure, empty-instead-of-delete output folders; doctor.py; verify_kit hashes. Each patch is marked, safe to run again, and prints "not found" instead of breaking if the plugin changes.
+- `app/video_encoder.mjs` — runtime FFmpeg hardware probes and encoder settings, copied into the kit by `patch_kit.py`. Required alongside the patcher. `app/video_encoder.test.mjs` tests selection, unsupported drivers and CPU overrides with `node --test app/video_encoder.test.mjs`.
 - `app/skills/scriptforge/SKILL.md` — the PDF prompt as a skill; the GUI reads it as its prompt.
 - `plugin/GrowKaz_Stickman.plugin` — a zip; the kit is in `skills/make-2d-video/kit`.
 - Runtime, outside the repo: `~/2D-Animation-Studio/{growkaz-stickman-studio, work/<slug>, youtube/token.json, settings.json}`.
@@ -53,10 +56,12 @@ A one-click Windows installer plus a desktop GUI for faceless YouTube videos. Sc
 1. Run a 6–10 minute video (Parts: Auto → about 3–4 passes) and check that the style stays consistent across passes. This is the one part of the pipeline not yet run for real.
 2. The user should watch the private test Short (https://youtu.be/ZzwRZC0lCG4) in YouTube Studio and decide whether to delete it or make it public. Claude couldn't view its frames because of the context-mode image block.
 3. Possibly design the channel branding. The channel is already named "The Thought Lab"; check whether the handle (e.g. `@ThoughtLabTV`), banner and avatar still need doing.
+4. Verify a populated full video with adaptive GPU encoding and compare output quality and elapsed render time against CPU. Test Intel/AMD and real GPU failure recovery when suitable hardware is available.
 
 ## 7. Open questions / gotchas
 - Line numbers above will drift; search by function name.
-- After editing the repo, copy `app/*.py` to `~/2D-Animation-Studio/app/`, and run `patch_kit.py` again if it changed.
+- After editing the repo, copy changed app files to `~/2D-Animation-Studio/app/`, including `video_encoder.mjs` when updating the patcher or encoder. Run `python app/patch_kit.py <installed-kit-path>` from the installed app's parent folder. The installer already copies the entire app directory.
+- Encoder override: `STUDIO_ENCODER=auto|cpu|gpu|nvenc|qsv|amf`, or renderer `--encoder` with the same values. Explicit GPU choices still fall back to CPU if unavailable. `--gl swiftshader` controls software drawing separately from video encoding. GPU quality settings approximate x264 and file sizes may differ.
 - `settings.json` holds the ElevenLabs key in plain text (it's gitignored). Never commit `token.json` or `client_secret.json`.
 - Animate's ETA before the render stage is a pace estimate; during the render it's exact.
 - To see what a headless Animate run is doing (or why it went quiet), read its session log: `~/.claude/projects/C--Users-Joao-2D-Animation-Studio-growkaz-stickman-studio/*.jsonl`, newest file. The log only updates when a step finishes, so a quiet log can mean Claude is thinking. Check for live `node render.mjs` / Chrome processes before calling it stuck.
