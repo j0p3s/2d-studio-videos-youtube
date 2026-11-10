@@ -239,6 +239,12 @@ class Studio(ctk.CTk):
         self.lbl_current = ctk.CTkLabel(sb, text="—", wraplength=190, justify="left",
                                         font=ctk.CTkFont(size=13, weight="bold"))
         self.lbl_current.pack(anchor="w", padx=24, pady=(2, 8))
+        self.btn_auto = ctk.CTkButton(sb, text="⚡ Auto", height=48, corner_radius=12,
+                                      font=ctk.CTkFont(size=17, weight="bold"), command=self.auto_run)
+        self.btn_auto.pack(fill="x", padx=18, pady=(4, 2))
+        ctk.CTkLabel(sb, text="script → voice → animation → thumbnail,\nthen waits for you to Publish",
+                     text_color="#7c8594", font=ctk.CTkFont(size=11), justify="left").pack(anchor="w", padx=22, pady=(0, 8))
+        self._auto, self._chain, self._auto_tries, self._auto_n = False, None, {}, 0
         ctk.CTkButton(sb, text="＋ New video", height=34, fg_color="#1d222b", hover_color="#272d38",
                       command=self.new_video).pack(fill="x", padx=18, pady=4)
         ctk.CTkButton(sb, text="📁 Open studio folder", height=34, fg_color="#1d222b", hover_color="#272d38",
@@ -366,6 +372,8 @@ class Studio(ctk.CTk):
         if self.busy:
             messagebox.showinfo("Busy", "Another task is running. Wait for it or press Stop.")
             return
+        if self._auto:
+            label = f"⚡ Auto {self._auto_n}/5 · {label}"
         self.busy = True
         self._cancel = False
         self._job = {"label": label, "t0": time.time(), "frac": 0.0, "text": "", "eta": None, "indet": indeterminate}
@@ -395,16 +403,23 @@ class Studio(ctk.CTk):
                 self.progress.configure(mode="determinate")
                 self.btn_stop.configure(state="disabled")
                 if err:
+                    was_auto = self._auto
+                    self._auto_stop()
                     self.lbl_status.configure(text=f"{label}: {'stopped' if self._cancel else 'failed'}")
                     self.lbl_pct.configure(text=f"after {self._fmt_t(el)}")
                     if not self._cancel:
-                        messagebox.showerror(label, str(err)[:1500])
+                        messagebox.showerror(label, str(err)[:1500] + ("\n\n⚡ Auto stopped here. Fix it and press "
+                                                                         "Auto again — it continues from this step."
+                                                                         if was_auto else ""))
                 else:
                     self.progress.set(1)
                     self.lbl_status.configure(text=f"{label}: done")
                     self.lbl_pct.configure(text=f"100%  ·  took {self._fmt_t(el)}")
                     if done:
                         done(res)
+                    nxt, self._chain = self._chain, None
+                    if nxt and self._auto:
+                        self.after(400, nxt)
             self.ui(finish)
         threading.Thread(target=worker, daemon=True).start()
 
@@ -520,7 +535,102 @@ class Studio(ctk.CTk):
         self.save_state()
         self.txt_script.delete("1.0", "end")
         self._render_ideas()
+        self._clear_upload_page()
         self.show("script")
+
+    def _clear_upload_page(self):
+        for e in (self.ent_video, self.ent_title, self.ent_tags, self.ent_thumb_text, self.ent_sched):
+            e.delete(0, "end")
+        self.txt_desc.delete("1.0", "end")
+        self.thumb_path = None
+        self.thumb_preview.configure(image=None, text="No thumbnail yet")
+        self.lbl_up.configure(text="")
+
+    # ================================================================== ⚡ AUTO
+    AUTO_STEPS = ["ideas", "script", "voiceover", "animation", "thumbnail"]
+
+    def auto_run(self):
+        if self.busy:
+            messagebox.showinfo("Auto", "A task is running. Wait for it or press Stop first.")
+            return
+        s = self.s
+        have = lambda k: bool(s.get(k)) and Path(s[k]).exists()
+        start = ("thumbnail" if have("video") else "animation" if have("voice") else
+                 "voiceover" if s.get("script") else "script" if self.ideas else "ideas")
+        todo = self.AUTO_STEPS[self.AUTO_STEPS.index(start):]
+        main, sub = self._niche()
+        self._sync_animate_page()
+        engine = self.opt_engine.get()
+        voice = self.opt_el_voice.get() if engine == "ElevenLabs" else self.opt_voice.get()
+        summary = (f"⚡ Auto will do: {' → '.join(todo)}, then stop on the Upload page.\n"
+                   f"Nothing is published until you press Publish.\n\n"
+                   + (f"Niche: {sub}\nLength: {self.opt_len.get()}  (uses the first idea)\n" if start in ("ideas", "script")
+                      else f"Video: {s.get('title', '—')}\n")
+                   + f"Voice: {engine} · {voice}\n"
+                   f"Video: {self.opt_aspect.get()} · {self.opt_res.get()} · {self.opt_style.get()} · parts {self.opt_parts.get()}\n\n"
+                   "Settings come from the Script, Voiceover and Animate pages — change them there first if needed.\n"
+                   "The animation step can take a long time. Start?")
+        if not messagebox.askyesno("⚡ Auto", summary):
+            return
+        self._auto, self._auto_tries = True, {}
+        self.btn_auto.configure(text="⚡ Auto running…", state="disabled")
+        self._auto_step()
+
+    def _auto_stop(self, msg=None):
+        self._auto, self._chain = False, None
+        self.btn_auto.configure(text="⚡ Auto", state="normal")
+        if msg:
+            self.lbl_status.configure(text=msg)
+
+    def _auto_go(self, step, fn):
+        """Run one step; when its job finishes, _auto_step picks the next one from the saved state."""
+        tries = self._auto_tries.get(step, 0) + 1
+        self._auto_tries[step] = tries
+        if tries > 2:   # the step "finished" twice without producing its result — don't loop forever
+            self._auto_stop(f"⚡ Auto stopped: the {step} step finished without a result")
+            messagebox.showwarning("⚡ Auto", f"The {step} step finished but didn't produce its result. "
+                                              "Check its page and log, then press Auto again.")
+            return
+        self._auto_n = self.AUTO_STEPS.index(step) + 1
+        self._chain = self._auto_step
+        fn()
+        if not self.busy:   # the step refused to start (it showed why)
+            self._auto_stop(f"⚡ Auto stopped before the {step} step")
+
+    def _auto_step(self):
+        if not self._auto:
+            return
+        s = self.s
+        have = lambda k: bool(s.get(k)) and Path(s[k]).exists()
+        if not s.get("script"):
+            if not self.ideas:
+                self.show("script")
+                return self._auto_go("ideas", self.get_ideas)
+            used = set(s.get("used_ideas", []))
+            idea = next((i for i in self.ideas if i.get("title") not in used), self.ideas[0])
+            self.show("script")
+            return self._auto_go("script", lambda: self.write_script(idea))
+        if not have("voice"):
+            self.show("voice")
+            return self._auto_go("voiceover", self.make_voice)
+        if not have("video"):
+            self.show("animate")
+            return self._auto_go("animation", self.make_video)
+        if not have("thumb"):
+            self.show("upload")
+            return self._auto_go("thumbnail", self.make_thumb)
+        # everything is ready: hand over to the user
+        self._auto_stop("⚡ Auto finished — review and press Publish")
+        self.show("upload")
+        self.deiconify()
+        self.lift()
+        self.attributes("-topmost", True)
+        self.after(600, lambda: self.attributes("-topmost", False))
+        self.bell()
+        self.btn_publish.configure(fg_color="#f59e0b", hover_color="#d97706", text_color="#111111")
+        messagebox.showinfo("⚡ Auto finished", f"“{s.get('title', 'Your video')}” is ready.\n\n"
+                                                "Check the title, description, tags, privacy and thumbnail on this page, "
+                                                "then press 🚀 Publish to YouTube.")
 
     # ================================================================== SETUP PAGE
     def _page_setup(self, p):
@@ -801,6 +911,9 @@ class Studio(ctk.CTk):
                   f"niche {main}, sub-niche {sub}, and chose this idea:\nTitle: {idea.get('title')}\nHook: {idea.get('hook')}\n"
                   f"Do STEP 3 now. {length}\n\n{self.SCRIPT_FORMAT}")
         words = 150 if shorts else 525 if choice == "3-4 min" else int(choice.split()[0]) * 150
+        used = self.s.setdefault("used_ideas", [])
+        if idea.get("title") and idea["title"] not in used:
+            used.append(idea["title"])
         self._script_request(prompt, idea.get("title", "video"), shorts, words)
 
     def revise_script(self):
@@ -1446,8 +1559,10 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
                 stop.set()
             m = re.search(r"FINAL_VIDEO:\s*(.+\.mp4)", res)
             path = m.group(1).strip().strip('"`') if m else None
-            if not path or not Path(path).exists():
-                path = self._latest_mp4()
+            if not path or not Path(path).exists():   # only this video's own output, never another project's
+                own = STUDIO / "projects" / self.s["slug"] / "out"
+                mp4s = [p for p in own.glob("*.mp4") if p.stat().st_mtime >= t0] if own.is_dir() else []
+                path = str(max(mp4s, key=lambda p: p.stat().st_mtime)) if mp4s else None
             return path
 
         def done(path):
@@ -1455,7 +1570,7 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
                 self.s["video"] = str(path)
                 self.save_state()
                 self.log(self.anim_log, f"🎉 Video ready: {path}")
-                if messagebox.askyesno("Video ready", f"{path}\n\nOpen it now?"):
+                if not self._auto and messagebox.askyesno("Video ready", f"{path}\n\nOpen it now?"):
                     open_path(path)
             else:
                 messagebox.showwarning("Animate", "Claude finished but no MP4 was found. Read the log, "
@@ -1633,8 +1748,9 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
         self.chk_kids.pack(anchor="w", padx=14, pady=6)
         r4 = ctk.CTkFrame(left, fg_color="transparent")
         r4.pack(fill="x", padx=14, pady=(10, 14))
-        ctk.CTkButton(r4, text="🚀 Upload to YouTube", height=42, font=ctk.CTkFont(size=15, weight="bold"),
-                      command=self.upload).pack(side="left")
+        self.btn_publish = ctk.CTkButton(r4, text="🚀 Publish to YouTube", height=42,
+                                         font=ctk.CTkFont(size=15, weight="bold"), command=self.upload)
+        self.btn_publish.pack(side="left")
         ctk.CTkButton(r4, text="🔗 YouTube setup", height=42, fg_color="#1d222b", hover_color="#272d38",
                       command=self.youtube_setup).pack(side="left", padx=8)
         self.lbl_up = ctk.CTkLabel(left, text="", text_color=ACCENT)
@@ -1686,6 +1802,8 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
             self._set(self.ent_thumb_text, meta.get("thumbnail_text", ""))
         cat = {"4. SCIENCE": "Science & Technology", "3. WHAT IF": "Science & Technology"}.get(self.s.get("niche_main"), "Education")
         self.opt_cat.set(cat)
+        if not self.thumb_path and self.s.get("thumb") and Path(self.s["thumb"]).exists():
+            self._show_thumb(self.s["thumb"])
 
     def _show_thumb(self, path):
         try:
@@ -1695,6 +1813,8 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
             self._thumb_img = ctk.CTkImage(light_image=img, dark_image=img, size=img.size)
             self.thumb_preview.configure(image=self._thumb_img, text="")
             self.thumb_path = str(path)
+            self.s["thumb"] = str(path)
+            self.save_state()
         except Exception as e:
             messagebox.showerror("Thumbnail", str(e))
 
@@ -1880,7 +2000,8 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
         def done(r):
             vid, note = r
             url = f"https://youtu.be/{vid}"
-            self.lbl_up.configure(text=f"Uploaded ✔  {url}")
+            self.lbl_up.configure(text=f"Published ✔  {url}")
+            self.btn_publish.configure(fg_color=ACCENT, hover_color=ACCENT_HOVER, text_color="#ffffff")
             self.s.setdefault("uploads", []).append(url)
             self.save_state()
             if messagebox.askyesno("Uploaded", f"Done! {url}{note}\n\nOpen in YouTube Studio?"):
