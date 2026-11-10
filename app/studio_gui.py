@@ -23,27 +23,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent
-INSTALLED_HOME = Path.home() / "2D-Animation-Studio"
+from portable_paths import local_environment
 
-
-def _find_home():
-    """The folder that holds growkaz-stickman-studio. Running from the setup/repo folder
-    (e.g. Desktop\\2D-Animation-Studio-Setup) still uses the installed studio."""
-    here = APP_DIR.parent
-    if (here / "growkaz-stickman-studio" / "render.mjs").exists():
-        return here
-    if (INSTALLED_HOME / "growkaz-stickman-studio" / "render.mjs").exists():
-        return INSTALLED_HOME
-    return here
-
-
-HOME = _find_home()
+HOME = APP_DIR.parent
 STUDIO = HOME / "growkaz-stickman-studio"
 WORK = HOME / "work"
 YT_DIR = HOME / "youtube"
 SETTINGS_FILE = HOME / "settings.json"
 PROMPT_FILE = APP_DIR / "skills" / "scriptforge" / "SKILL.md"
-SKILLS_DIR = Path.home() / ".claude" / "skills"
+SKILLS_DIR = HOME / ".claude" / "skills"
 ERR_LOG = HOME / "gui_error.log"
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
@@ -112,10 +100,14 @@ def fresh_env():
     env["PATH"] = ";".join(p for p in parts if p)
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
-    return env
+    return local_environment(HOME, env)
 
 
 ENV = fresh_env()
+# Python libraries also use local caches when called directly rather than as children.
+for _key in ("TEMP", "TMP", "XDG_CACHE_HOME", "HF_HOME", "PIP_CACHE_DIR", "PLAYWRIGHT_BROWSERS_PATH"):
+    os.environ[_key] = ENV[_key]
+
 
 
 def which(name):
@@ -784,7 +776,7 @@ class Studio(ctk.CTk):
                 ("GrowKaz studio kit", str(STUDIO) if (STUDIO / "render.mjs").exists() else None),
                 ("three.js + Playwright", "installed" if (STUDIO / "node_modules" / "three").exists()
                  and (STUDIO / "node_modules" / "playwright").exists() else None),
-                ("Shared skills (make-2d-video, scriptforge)", "installed" if (SKILLS_DIR / "make-2d-video" / "SKILL.md").exists()
+                ("Local skills (make-2d-video, scriptforge)", "installed" if (SKILLS_DIR / "make-2d-video" / "SKILL.md").exists()
                  and (SKILLS_DIR / "scriptforge" / "SKILL.md").exists() else None),
             ]
             for provider in ("OpenAI (Codex)", "Gemini"):
@@ -849,10 +841,14 @@ class Studio(ctk.CTk):
     def claude_login(self):
         exe = claude_exe()
         if not exe:
-            if messagebox.askyesno("Claude Code", "Claude Code is not installed. Install it now (official installer)?"):
-                subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-NoExit", "-Command",
-                                  "irm https://claude.ai/install.ps1 | iex; Write-Host 'Now type: claude'"],
-                                 creationflags=subprocess.CREATE_NEW_CONSOLE)
+            if messagebox.askyesno("Claude Code", "Claude Code is not installed. Install it in this studio folder?"):
+                def install():
+                    rc = self.run_cmd(["cmd", "/c", "npm", "install", "--prefix", str(HOME / ".tools"),
+                                       "-g", "@anthropic-ai/claude-code"],
+                                      on_line=lambda line: self.log(self.setup_log, line))
+                    if rc:
+                        raise RuntimeError("Claude installation failed. See Setup log.")
+                self.run_job("Installing Claude", install, lambda _: self.check_setup())
             return
         messagebox.showinfo("Log in to Claude", "A Claude Code window will open.\n\n"
                             "Sign in when asked (or type /login), then type /exit and close that window.")
@@ -863,7 +859,7 @@ class Studio(ctk.CTk):
     def install_ai(self, provider):
         package = "@openai/codex" if provider == "OpenAI (Codex)" else "@google/gemini-cli"
         def work():
-            rc = self.run_cmd(["cmd", "/c", "npm", "install", "-g", package],
+            rc = self.run_cmd(["cmd", "/c", "npm", "install", "--prefix", str(HOME / ".tools"), "-g", package],
                               on_line=lambda line: self.log(self.setup_log, line))
             if rc:
                 raise RuntimeError(f"Could not install {provider}. See the Setup log.")
