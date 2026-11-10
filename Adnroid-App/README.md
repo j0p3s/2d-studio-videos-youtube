@@ -28,6 +28,8 @@ Os botões **Device benchmark** exportam vídeos silenciosos de 10 segundos ou 1
 
 Na versão 0.2 foi ligado um RedMagic NX789J com Android 16. Passaram os testes instrumentados do menu, exportação ZIP, filtragem de tokens, voz Edge sem Azure e render narrado 1920×1080 H.264/AAC. Um crash Java controlado ficou persistido após reabrir. O MP4 curto foi descarregado e descodificado integralmente por FFmpeg sem erros. O benchmark prolongado é silencioso; não avalia uma narração completa de 10 minutos.
 
+O benchmark silencioso de 10 minutos também passou no aparelho: encoder `c2.qti.avc.encoder`, 1920×1080, 24 fps, 14 400 fotogramas e 600,000 segundos de vídeo. O AAC inclui cerca de 0,107 segundos de padding. O MP4 foi descarregado e descodificado integralmente sem erros. O teste revelou e permitiu corrigir a espera repetida por EOS no áudio; o render passou após antecipar o escoamento do encoder e reutilizar a textura EGL em vez de a realocar a cada frame. Estes resultados não validam chamadas a fornecedores de guiões nem uma narração real de 10 minutos.
+
 ## Compilar
 
 JDK 17, Android SDK platform 35/build-tools 35.0.0. O Gradle Wrapper fixa Gradle 8.11.1 e AGP 8.9.1.
