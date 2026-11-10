@@ -31,6 +31,22 @@ if MARK not in src:
 else:
     print("render.mjs already patched")
 
+# frame progress file for the GUI's progress bar (build/render_progress.json)
+PMARK = "/* 2d-studio: progress file */"
+src = render.read_text(encoding="utf-8")
+if PMARK not in src:
+    old = "ff.stdin.once('drain', r)); done++;"
+    if old not in src:
+        print("render.mjs: frame loop not found - progress file not added")
+    else:
+        new = (old + " " + PMARK + " if (done % 12 === 0 || done === f1 - f0) { try { fs.writeFileSync("
+               "path.join(BUILD, 'render_progress.json'), JSON.stringify({ done, total: f1 - f0, "
+               "full: !(args.from || args.to), t0, t: Date.now() })); } catch {} }")
+        render.write_text(src.replace(old, new, 1), encoding="utf-8")
+        print("patched render.mjs (progress file)")
+else:
+    print("render.mjs progress file already patched")
+
 doctor = studio / "tools" / "doctor.py"
 src = doctor.read_text(encoding="utf-8")
 if "2d-studio: browser fallback" not in src:
