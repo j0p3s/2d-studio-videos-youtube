@@ -7,7 +7,9 @@ A one-click Windows installer plus a desktop GUI for faceless YouTube videos. Sc
 - **Done and pushed:** the installer, launcher and GUI (Setup / Script / Voiceover / Animate / Upload), ElevenLabs as an option, multi-pass "parts", a character-style picker, a real progress bar (stage, %, elapsed, ETA), passage-based voiceover with 3 at a time, and the **⚡ Auto** button (ideas → script → voice → animation → thumbnail, then waits for **Publish**).
 - **Installed copy:** `%USERPROFILE%\2D-Animation-Studio`, updated by copying `app/*.py` over by hand after each change. The user is logged in to the Claude CLI, and script generation works.
 - **Verified:** voiceover on a real 1,479-word script (8m53s, 10 s with 3 at a time). Self-test render through Chrome: 14/14 stills. `verify_kit` 29/29, doctor all OK.
-- **Never run for real:** a full Animate run (Claude building and rendering a whole video), a YouTube upload, and Auto end to end. Auto was only simulated with fake steps.
+- **First real end-to-end run (2026-11-10):** ⚡ Auto on a Shorts video (9:16, 720p, Edge voice) went ideas → script → voiceover → animation → thumbnail with no input, in about 30 min. Result: "Why Motivation Is Lying to You", a 54 s MP4 with audio. Most of the time went into Claude writing and checking 28 shots; the full 1,299-frame render took 87 s. Published as **private** to the channel "The Thought Lab" (https://youtu.be/ZzwRZC0lCG4): processed, with tags and a custom thumbnail (the channel is verified).
+- **Fixed after that run (PRs #2 and #3, merged):** render.mjs hanging ~7 min per failed render, EPERM on `build/stills`, PowerShell and context-mode tools denied in the headless Animate run, and Publish failing with `invalid_scope` (see §4).
+- **Not yet run for real:** a long video built in several passes ("parts"), 6–10 min.
 
 ## 3. Key decisions (don't re-debate)
 - **Claude stays required** for scripts and animation. The user rejected offline mode (Ollama, templates, Piper).
@@ -24,6 +26,10 @@ A one-click Windows installer plus a desktop GUI for faceless YouTube videos. Sc
 - **pip on Python 3.15:** `av` fails to build.
 - **`cmd /k "echo … & \"claude.exe\""` from Python:** quotes get escaped to `\"`. Pass the exe as its own list argument (`claude_login`, ~L730).
 - **Killing processes / `rm -rf` folders:** blocked by Claude's auto-mode permissions, so ask the user to do it.
+- **render.mjs on failure** set `process.exitCode` but never exited. Chrome kept Node alive until an outer `timeout` killed it, costing ~7 min per failure. Now patched by `patch_kit.py` to exit at once.
+- **Deleting `build/stills` on Windows** fails with EPERM if any shell has that folder as its working directory (Claude's shell stays in a folder after `cd`). Now patched to empty the folder instead of deleting it.
+- **Animate's `--allowedTools` without `PowerShell`:** Claude Code on Windows reaches for PowerShell first, so every call was denied. The context-mode plugin's hook clips long output and points at its own MCP tools, which were also denied. Both are now in the list.
+- **YouTube token loaded with the app's `SCOPES`:** the refresh asked for `youtube.readonly`, which the token never had (it has the broader `youtube` scope), so Google answered `invalid_scope`. Now it loads the scopes the token was actually granted (`_scopes_ok`).
 
 ## 5. Files that matter
 - `Install-2D-Studio.cmd` — winget tools, Claude CLI, copies the kit and skills to `~/.claude/skills`, runs patch_kit, npm, pip, shortcut.
@@ -37,22 +43,24 @@ A one-click Windows installer plus a desktop GUI for faceless YouTube videos. Sc
   - `_video_prompt` / `_part_prompts` L1375 / L1416
   - `make_video` L1524
   - `_pipeline_state` L1604 (Animate progress from project files)
-  - `_yt_service` / `upload` L1923 / L1943
-- `app/patch_kit.py` — patches the installed kit: render.mjs browser fallback + `build/render_progress.json`, doctor.py, verify_kit hashes. Safe to run again.
+  - `_scopes_ok` / `_yt_service` / `upload`
+- `app/patch_kit.py` — patches the installed kit: render.mjs browser fallback, `build/render_progress.json`, exit on failure, empty-instead-of-delete output folders; doctor.py; verify_kit hashes. Each patch is marked, safe to run again, and prints "not found" instead of breaking if the plugin changes.
 - `app/skills/scriptforge/SKILL.md` — the PDF prompt as a skill; the GUI reads it as its prompt.
 - `plugin/GrowKaz_Stickman.plugin` — a zip; the kit is in `skills/make-2d-video/kit`.
 - Runtime, outside the repo: `~/2D-Animation-Studio/{growkaz-stickman-studio, work/<slug>, youtube/token.json, settings.json}`.
 
 ## 6. Next steps
-1. Run **⚡ Auto** on a short video (Shorts or 2 min, 720p) and watch the Animate log and progress. This is the first real end-to-end test.
-2. Fix whatever breaks there. Likely suspects: the `--allowedTools` list is too narrow (else use "Full auto"), and the `FINAL_VIDEO` line isn't found.
-3. Test Publish with `youtube/token.json` (scope `youtube.upload`); the thumbnail needs a verified channel.
-4. Check whether the multi-pass "parts" prompts keep the style consistent on a 6–10 minute video.
-5. Possibly design the channel branding: the user is leaning towards renaming @AmITheVillainTV to "The Thought Lab" (handle e.g. `@ThoughtLabTV`).
+1. Run a 6–10 minute video (Parts: Auto → about 3–4 passes) and check that the style stays consistent across passes. This is the one part of the pipeline not yet run for real.
+2. The user should watch the private test Short (https://youtu.be/ZzwRZC0lCG4) in YouTube Studio and decide whether to delete it or make it public. Claude couldn't view its frames because of the context-mode image block.
+3. Possibly design the channel branding. The channel is already named "The Thought Lab"; check whether the handle (e.g. `@ThoughtLabTV`), banner and avatar still need doing.
 
 ## 7. Open questions / gotchas
 - Line numbers above will drift; search by function name.
 - After editing the repo, copy `app/*.py` to `~/2D-Animation-Studio/app/`, and run `patch_kit.py` again if it changed.
 - `settings.json` holds the ElevenLabs key in plain text (it's gitignored). Never commit `token.json` or `client_secret.json`.
 - Animate's ETA before the render stage is a pace estimate; during the render it's exact.
+- To see what a headless Animate run is doing (or why it went quiet), read its session log: `~/.claude/projects/C--Users-Joao-2D-Animation-Studio-growkaz-stickman-studio/*.jsonl`, newest file. The log only updates when a step finishes, so a quiet log can mean Claude is thinking. Check for live `node render.mjs` / Chrome processes before calling it stuck.
+- The user's context-mode plugin also runs inside headless Animate runs and blocks reading images and large files directly.
+- The running GUI keeps the code it started with. After copying `app/*.py`, restart the app to pick up the change.
+- Driving the GUI with computer use: the window belongs to `pythonw.exe`, which Windows lists as "IDLE (Python 3.12 64-bit)". `open_application` on that name opens a real IDLE shell too, so close it.
 - The GrowKaz plugin and the PDF are third-party. The repo is private; check the licence before making it public.
