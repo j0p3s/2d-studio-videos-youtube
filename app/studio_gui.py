@@ -1925,13 +1925,25 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
 
     SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly"]
 
+    @staticmethod
+    def _scopes_ok(granted):
+        """True if a token's granted scopes allow uploading and reading the channel."""
+        g = {s.rsplit("/", 1)[-1] for s in (granted or [])}
+        full = bool(g & {"youtube", "youtube.force-ssl"})
+        return ("youtube.upload" in g or full) and ("youtube.readonly" in g or full)
+
     def _yt_service(self):
         from google.auth.transport.requests import Request
         from google.oauth2.credentials import Credentials
         from google_auth_oauthlib.flow import InstalledAppFlow
         from googleapiclient.discovery import build
         tok, secret = YT_DIR / "token.json", YT_DIR / "client_secret.json"
-        creds = Credentials.from_authorized_user_file(str(tok), self.SCOPES) if tok.exists() else None
+        # Load with the scopes the token was actually granted. Forcing self.SCOPES makes the refresh
+        # ask Google for scopes the user never granted (e.g. youtube.readonly on a token that has
+        # the broader "youtube" scope), and Google answers invalid_scope.
+        creds = Credentials.from_authorized_user_file(str(tok)) if tok.exists() else None
+        if creds and not self._scopes_ok(creds.scopes):
+            creds = None   # token lacks upload or read access: sign in again with SCOPES
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
