@@ -47,6 +47,40 @@ if PMARK not in src:
 else:
     print("render.mjs progress file already patched")
 
+# Windows: a failed render left Chrome running, so node never exited and sat there until an
+# outer `timeout` killed it (7 minutes lost per failure). Exit as soon as the error is printed.
+EMARK = "/* 2d-studio: exit on failure */"
+src = render.read_text(encoding="utf-8")
+if EMARK not in src:
+    old = "process.exitCode = 1; }"
+    if old not in src:
+        print("render.mjs: failure handler not found - exit patch not applied")
+    else:
+        render.write_text(src.replace(old, "process.exitCode = 1; " + EMARK + " process.exit(1); }", 1),
+                          encoding="utf-8")
+        print("patched render.mjs (exit on failure)")
+else:
+    print("render.mjs exit-on-failure already patched")
+
+# Windows: deleting build/stills (or sheets, parts) fails with EPERM when any shell has that
+# folder as its working directory. Empty the folder instead of removing it.
+CMARK = "/* 2d-studio: empty dirs */"
+src = render.read_text(encoding="utf-8")
+if CMARK not in src:
+    import re
+    pat = re.compile(r"fs\.rmSync\((\w+), \{ recursive: true, force: true \}\); fs\.mkdirSync\(\1, \{ recursive: true \}\);")
+    if not pat.search(src):
+        print("render.mjs: folder reset not found - empty-dirs patch not applied")
+    else:
+        src = pat.sub(r"_emptyDir(\1);", src)
+        helper = (CMARK + " const _emptyDir = d => { fs.mkdirSync(d, { recursive: true }); "
+                  "for (const f of fs.readdirSync(d)) fs.rmSync(path.join(d, f), { recursive: true, force: true }); };\n")
+        i = src.index("if (!args.project)")
+        render.write_text(src[:i] + helper + src[i:], encoding="utf-8")
+        print("patched render.mjs (empty dirs)")
+else:
+    print("render.mjs empty-dirs already patched")
+
 doctor = studio / "tools" / "doctor.py"
 src = doctor.read_text(encoding="utf-8")
 if "2d-studio: browser fallback" not in src:
