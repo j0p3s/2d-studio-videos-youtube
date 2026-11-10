@@ -37,6 +37,8 @@ Go to **Upload → YouTube setup** and follow the steps there. You create a free
 - **Claude says "Not logged in"**: use **Setup → Log in to Claude**, choose *Claude account with subscription*, and sign in in the browser.
 
 ## Notes
-- Rendering is CPU-heavy. A 1080p video renders at roughly 0.5–2× real time on a modern PC, and 4K is much slower.
+- Video encoding automatically tries NVIDIA NVENC, Intel Quick Sync, then AMD AMF using a real FFmpeg probe at the output resolution. If none works, it uses CPU x264. If a GPU fails during rendering (including concurrent encoder session limits), it retries all parts on CPU before joining them. Render logs show the selected encoder.
+- Chrome uses its available graphics acceleration (and requests the high-performance GPU on Windows). Frame stepping, audio processing and scene logic remain on CPU; final assembly copies the encoded video without re-encoding. Video capture defaults to JPEG; still images remain PNG.
+- To force CPU encoding, set `STUDIO_ENCODER=cpu` before launching the app. Renderer overrides: `--encoder auto|cpu|gpu|nvenc|qsv|amf`; `--gl swiftshader` forces software drawing. GPU quality settings approximate x264 quality and can produce different file sizes.
 - "Full auto" on the Animate page runs Claude Code with `--dangerously-skip-permissions`. Leave it off unless a run gets stuck on permissions.
 - If the app won't open, check `%USERPROFILE%\2D-Animation-Studio\gui_error.log`.

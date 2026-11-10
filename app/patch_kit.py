@@ -92,7 +92,7 @@ else:
 #  Measured at 1080p, 480 frames: PNG + x264 ~72 s -> JPEG + NVENC 15.6 s (4.6x).
 GMARK = "/* 2d-studio: gpu encode */"
 src = render.read_text(encoding="utf-8")
-if GMARK not in src:
+if GMARK not in src and "/* 2d-studio: adaptive encoder v2 */" not in src:
     reps = [
         ("import { spawn } from 'node:child_process';",
          "import { spawn, spawnSync } from 'node:child_process';"),
@@ -130,6 +130,56 @@ if GMARK not in src:
         print("patched render.mjs (GPU encode, high-performance GPU, JPEG frame capture)")
 else:
     print("render.mjs GPU patch already applied")
+
+# Upgrade earlier NVIDIA-only installs as well as freshly extracted kits.
+VMARK = "/* 2d-studio: adaptive encoder v2 */"
+src = render.read_text(encoding="utf-8")
+if VMARK not in src and GMARK in src:
+    start = src.index(GMARK)
+    end = src.index("async function renderVideo() {", start)
+    src = src[:start] + (VMARK + "\nimport { selectEncoder } from './video_encoder.mjs';\n"
+        "let _encoder;\nconst _encArgs = () => _encoder.options;\n") + src[end:]
+    src = src.replace("await b0.close();", "const [encW, encH] = await p0.evaluate('window.OUT');\n  await b0.close();\n"
+        "  _encoder = selectEncoder(args.encoder || process.env.STUDIO_ENCODER || 'auto', encW, encH, args.crf || 18, args.preset || 'medium');", 1)
+    src = src.replace("${_useGpuEnc(W) ? 'GPU (NVENC)' : 'CPU (x264)'}", "${_encoder.name}")
+    src = src.replace("const work = async (k) => {", "const work = async (k) => {\n    try {")
+    src = src.replace("for (let f = a; f < b; f++) {", """const finished = new Promise((resolve, reject) => {
+      ff.once('error', reject);
+      ff.once('close', code => code === 0 ? resolve() : reject(new Error('encoder exited ' + code)));
+    });
+    finished.catch(() => {});
+    let pipeError;
+    ff.stdin.on('error', e => { pipeError = e; });
+    try {
+    for (let f = a; f < b; f++) {""", 1)
+    src = src.replace("if (!ff.stdin.write(img)) await new Promise(r => ff.stdin.once('drain', r));", """if (pipeError || ff.exitCode !== null) throw pipeError || new Error('encoder stopped');
+      if (!ff.stdin.write(img)) await Promise.race([
+        new Promise(r => ff.stdin.once('drain', r)),
+        finished.then(() => { throw new Error('encoder stopped before all frames'); })]);""", 1)
+    src = src.replace("ff.stdin.end(); await new Promise(r => ff.on('close', r)); await browser.close(); return out;",
+        "ff.stdin.end(); await finished; return out;\n"
+        "    } finally { if (ff.exitCode === null) ff.kill(); await browser.close(); }\n"
+        "    } catch (e) { throw e; }")
+    src = src.replace("const parts = (await Promise.all([...Array(W)].map((_, k) => work(k)))).filter(Boolean);", """const renderParts = async () => {
+    const results = await Promise.allSettled([...Array(W)].map((_, k) => work(k)));
+    const failed = results.find(r => r.status === 'rejected');
+    if (failed) throw failed.reason;
+    return results.map(r => r.value).filter(Boolean);
+  };
+  let parts;
+  try { parts = await renderParts(); }
+  catch (e) {
+    if (!_encoder.gpu) throw e;
+    console.warn('[encoder] GPU render failed; retrying all parts on CPU:', e.message);
+    _encoder = selectEncoder('cpu', encW, encH, args.crf || 18, args.preset || 'medium');
+    done = 0;
+    parts = await renderParts();
+  }""")
+    render.write_text(src, encoding="utf-8")
+    print("patched render.mjs (adaptive GPU encoding with CPU retry)")
+if VMARK in render.read_text(encoding="utf-8"):
+    import shutil
+    shutil.copyfile(Path(__file__).with_name("video_encoder.mjs"), studio / "video_encoder.mjs")
 
 doctor = studio / "tools" / "doctor.py"
 src = doctor.read_text(encoding="utf-8")
