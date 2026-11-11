@@ -8,6 +8,38 @@ from ai_providers import EventStream, agent_command, run_agent, portable_prompt,
 
 class ProviderTests(unittest.TestCase):
     @patch('ai_providers.cli_command', return_value=['codex.exe'])
+    def test_windows_animation_sets_workspace_trust_and_preserves_sandbox_choice(self, _):
+        with tempfile.TemporaryDirectory() as folder, patch('ai_providers.os.name', 'nt'):
+            root = Path(folder)
+            cmd = agent_command('OpenAI (Codex)', animation=True, workspace=folder,
+                                env={'CODEX_HOME': folder})
+            self.assertIn('--no-daemon', cmd)
+            self.assertIn('windows.sandbox="unelevated"', cmd)
+            self.assertTrue(any('trust_level="trusted"' in value for value in cmd))
+            self.assertIn('workspace-write', cmd)
+            self.assertNotIn('--dangerously-bypass-approvals-and-sandbox', cmd)
+            (root / 'config.toml').write_text('[windows]\nsandbox="elevated"\n')
+            cmd = agent_command('OpenAI (Codex)', animation=True, workspace=folder,
+                                env={'CODEX_HOME': folder})
+            self.assertNotIn('windows.sandbox="unelevated"', cmd)
+
+    @patch('ai_providers.shutil.which', return_value='C:/Users/test/AppData/Local/OpenAI/Codex/bin/build/codex.exe')
+    def test_desktop_codex_requires_standalone_install(self, _):
+        with self.assertRaisesRegex(RuntimeError, 'standalone'):
+            cli_command('OpenAI (Codex)')
+
+    @patch('ai_providers.cli_command', return_value=['codex.exe'])
+    def test_blocked_animation_is_failure_even_with_zero_exit(self, _):
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / 'SKILL.md').write_text('skill')
+            def run(cmd, **kw):
+                kw['on_line'](json.dumps({'type': 'item.completed', 'item': {
+                    'type': 'agent_message', 'text': 'Pass 1 is blocked. The session is read-only filesystem access.'}}))
+                return 0
+            with self.assertRaisesRegex(RuntimeError, 'stopped before later passes'):
+                run_agent('OpenAI (Codex)', 'animate', run, cwd=folder, animation=True, skill_dir=folder)
+
+    @patch('ai_providers.cli_command', return_value=['codex.exe'])
     def test_codex_permissions_and_stdin(self, _):
         cmd = agent_command('OpenAI (Codex)', animation=False)
         self.assertIn('read-only', cmd)
