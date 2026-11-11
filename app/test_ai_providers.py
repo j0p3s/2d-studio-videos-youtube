@@ -106,6 +106,14 @@ class ProviderTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'Auth method'):
             run_agent('Gemini', 'test', run, cwd='.')
 
+    @patch('ai_providers.cli_command', return_value=['node', 'gemini.js'])
+    def test_rejected_google_login_points_to_gemini_api(self, _):
+        def run(cmd, **kw):
+            kw['on_line']('An unexpected critical error occurred:IneligibleTierError: This client is no longer supported')
+            return 1
+        with self.assertRaisesRegex(RuntimeError, 'choose "Gemini API"'):
+            run_agent('Gemini', 'test', run, cwd='.')
+
     @staticmethod
     def _reply(body):
         class Reply(io.BytesIO):
@@ -149,11 +157,19 @@ class ProviderTests(unittest.TestCase):
                 seen['cmd'] = cmd
                 kw['on_line'](json.dumps({'type': 'message', 'role': 'assistant', 'content': 'FINAL_VIDEO: a.mp4'}))
                 return 0
-            text = run_agent('Gemini API', 'animate', run, cwd=folder, animation=True, skill_dir=folder,
-                             env={'GEMINI_API_KEY': 'k', 'GEMINI_MODEL': 'model-x'})
+            env = {'GEMINI_API_KEY': 'k', 'GEMINI_MODEL': 'model-x', 'GEMINI_CLI_HOME': folder}
+            text = run_agent('Gemini API', 'animate', run, cwd=folder, animation=True, skill_dir=folder, env=env)
             self.assertEqual(text, 'FINAL_VIDEO: a.mp4')
             self.assertEqual(seen['cmd'][:2], ['node', 'gemini.js'])
             self.assertIn('model-x', seen['cmd'])
+            key_home = Path(folder) / 'gemini-api-key'
+            self.assertEqual(env['GEMINI_CLI_HOME'], str(key_home))
+            self.assertEqual(json.loads((key_home / '.gemini/settings.json').read_text())
+                             ['security']['auth']['selectedType'], 'gemini-api-key')
+            run_agent('Gemini API', 'animate', run, cwd=folder, animation=True, skill_dir=folder, env=env)
+            self.assertEqual(env['GEMINI_CLI_HOME'], str(key_home))
+            run_agent('Gemini', 'animate', run, cwd=folder, animation=True, skill_dir=folder, env=env)
+            self.assertEqual(env['GEMINI_CLI_HOME'], folder)
             with self.assertRaisesRegex(RuntimeError, 'GEMINI_API_KEY'):
                 run_agent('Gemini API', 'animate', run, cwd=folder, animation=True, skill_dir=folder, env={})
 

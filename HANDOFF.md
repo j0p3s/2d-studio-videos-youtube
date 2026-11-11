@@ -22,6 +22,8 @@
 ## 3. Key decisions and reasons
 - Gemini API is an **additional** provider, not a replacement. A rewrite that replaced `ai_providers.py` broke the GUI calls, the provider menu, Codex and the tests, so the CLI providers were restored.
 - Animation with Gemini API goes through the Gemini CLI, because a plain API call cannot write files or run the render kit.
+- Gemini API animation runs the CLI with its own config folder (`.runtime/home/gemini-api-key`, see `gemini_key_home` in `app/ai_providers.py`) that selects key sign-in. The CLI's normal folder keeps a Google login once chosen and ignores the key; Google now rejects that login (`IneligibleTierError`, "migrate to Antigravity"), so the plain "Gemini" provider no longer works for this account. A `GEMINI_CLI_SYSTEM_SETTINGS_PATH` override was tried first and the CLI skips it ("parent directory is insecure").
+- Verified 2026-11-11: the CLI with the key folder answered on `gemini-3.5-flash` (exit 0) but took ~115 s for a one-line reply; `gemini-flash-latest` did not answer within 200 s through the CLI. `gemini-2.5-flash` is retired (404).
 - The studio `.env` wins over inherited Windows variables, and a `GEMINI_MODEL` that is not a model name is dropped. A Windows user variable `GEMINI_MODEL=<model-that-succeeded>` (a pasted placeholder) made the Gemini CLI fail with HTTP 400 "unexpected model name format".
 - The Gemini key is read from `.env` in the studio folder and sent in the `x-goog-api-key` header, never in the URL. `.env` is gitignored.
 - A Gemini API request that waits the full 600 s fails at once instead of retrying; retries apply only to 429/500/503 and connection errors.
