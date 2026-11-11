@@ -588,7 +588,7 @@ class Studio(ctk.CTk):
                          skill_dir=SKILLS_DIR / "make-2d-video", on_event=event)
 
     def offline(self):
-        """True when "Always work offline" is on: local AI, Piper voice, no uploads."""
+        """True when "Always work offline" is on: local AI and Piper voice. Upload still works."""
         return bool(self.settings.get("offline"))
 
     def apply_offline(self):
@@ -908,7 +908,7 @@ class Studio(ctk.CTk):
             model.bind("<Return>", save_model)
         row_off = ctk.CTkFrame(ai, fg_color="transparent")
         row_off.pack(fill="x", padx=12, pady=5)
-        self.sw_offline = ctk.CTkSwitch(row_off, text="Always work offline (Ollama + Piper voice, no upload)",
+        self.sw_offline = ctk.CTkSwitch(row_off, text="Always work offline (Ollama + Piper voice)",
                                         command=self._toggle_offline)
         if self.offline():
             self.sw_offline.select()
@@ -2494,10 +2494,6 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
         return build("youtube", "v3", credentials=creds, cache_discovery=False)
 
     def upload(self):
-        if self.offline():
-            messagebox.showinfo("Upload", "\"Always work offline\" is on, and uploading to YouTube needs internet.\n\n"
-                                "Switch it off in ⚙ Setup when you are back online; the video stays saved.")
-            return
         video = self.ent_video.get().strip()
         title = self.ent_title.get().strip()
         if not video or not Path(video).exists():
