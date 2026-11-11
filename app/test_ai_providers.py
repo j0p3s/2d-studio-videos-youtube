@@ -45,8 +45,8 @@ class ProviderTests(unittest.TestCase):
         self.assertIn('read-only', cmd)
         self.assertEqual(cmd[-1], '-')
         cmd = agent_command('OpenAI (Codex)', animation=True, full_auto=True)
-        self.assertIn('--dangerously-bypass-approvals-and-sandbox', cmd)
-        self.assertNotIn('--sandbox', cmd)
+        self.assertNotIn('--dangerously-bypass-approvals-and-sandbox', cmd)
+        self.assertIn('workspace-write', cmd)
 
     @patch('ai_providers.cli_command', return_value=['node', 'gemini.js'])
     def test_gemini_permissions(self, _):

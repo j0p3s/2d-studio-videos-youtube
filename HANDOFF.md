@@ -13,7 +13,7 @@
 - PR #14: Gemini installation allows only @github/keytar's install script for that command; upstream deprecation warning can remain.
 - PR #15: failed speech passages recover sequentially in smaller cached pieces. A real 9-passage narration recovered to 529.44 s and decoded cleanly.
 - PR #16: Codex Windows animation explicitly trusts its workspace, enables a Windows sandbox when unset, preserves existing choices, enables rendering network access and stops blocked passes immediately.
-- Latest validation: 20 Python tests pass; live Codex adapter read its skill and wrote a verified workspace marker (removed). Full multi-pass animation was NOT rerun after this fix.
+- Current validation: sandboxed scene creation works, but Chrome spawn EPERM blocked contact-sheet QC. New app/host_render.py runs rendering/mixing in the app, requests agent visual review, and checkpoints approved passes. Real host rendering and sandboxed agent image inspection succeeded; 26 Python tests pass. The complete new flow is not yet run end to end.
 - Android prototype exists in `Adnroid-App/` (spelling intentional): independent native renderer, free Edge speech, API-based AI, diagnostic exports. Device-tested 10-minute silent 1080p render; not a GrowKaz port.
 
 ## 3. Key decisions and reasons
@@ -22,7 +22,7 @@
 - All newly generated video content must be English. Microsoft Edge Neural narration is required; default en-US-AndrewMultilingualNeural. Old ElevenLabs/Portuguese settings migrate.
 - Use canvas + three.js in Chrome/Edge + FFmpeg, not Remotion. AI generation remains online; offline/template generation was rejected.
 - Video frame capture uses JPEG; inspected stills/sheets remain PNG. Probe NVENC → Intel QSV → AMD AMF; unavailable/failed GPU encoding falls back to CPU. Scene logic/audio stay CPU.
-- Codex animation uses standalone CLI in the active folder's .tools; avoid Desktop bundled executable. No automatic escalation to Full auto; existing explicit checkbox remains optional.
+- Codex animation uses standalone CLI in the active folder's .tools; avoid Desktop bundled executable. Codex always remains sandboxed; the Full auto checkbox now applies only to Claude/Gemini.
 - PowerShell 7 was discussed only: no change requested or made; installing it alone is unlikely to materially speed this pipeline.
 
 ## 4. Failed approaches — do not repeat
@@ -36,7 +36,7 @@
 
 ## 5. Files that matter
 - `app/studio_gui.py`: UI and pipeline; Auto ~581, install_ai ~859, script project reset ~1079, speech ~1328, Animate ~1763, YouTube ~2179 (search names as lines drift).
-- `app/ai_providers.py`: CLI discovery, Windows permissions, vendor event parsing and blocked-pass detection. `app/test_ai_providers.py` covers adapters.
+- `app/ai_providers.py`: CLI discovery, Windows sandbox and blocked-pass detection. `app/host_render.py`: project-scoped host rendering, visual QC checkpoints and final validation; both have tests.
 - `app/portable_paths.py`: process-local paths, non-overwriting legacy migration/rebased copied JSON, local skill extraction; `app/test_portable_paths.py` covers migration.
 - `app/language_policy.py`: English-only prompts/voices/import validation; `app/test_voice_recovery.py` covers cached speech recovery/outages.
 - `app/patch_kit.py`, `app/video_encoder.mjs`: idempotent renderer/browser patches and adaptive encoder selection; `app/video_encoder.test.mjs` tests selection.
@@ -44,7 +44,7 @@
 - Local-only: `settings.json`, `youtube/`, `work/<slug>/`, `growkaz-stickman-studio/projects/`, `.claude/`, `.codex/`, `.runtime/`, `.cache/`, `.tools/`, `.venv/`; all gitignored.
 
 ## 6. Next steps
-1. Restart the active app, press Auto → Continue this project; confirm the first animation pass actually creates project files with the fixed Codex adapter.
+1. Restart the active app, press Auto → Continue this project; confirm host-rendered sheets are visually inspected and the new checkpoint resumes correctly. Preserve existing authored scenes.
 2. Finish the current ~502 s, four-pass project `5-tiny-rules-that-make-discipline-easier-11110026`; inspect its contact sheets, final audio/video and cross-pass style consistency.
 3. Run `.venv/Scripts/python.exe -m unittest discover -s app -p "test_*.py"` and `node --test app/video_encoder.test.mjs` after relevant code changes.
 4. For updates, push/merge a PR and sync tracked files into the active app folder, preserving runtime/config files. Reapply patch_kit.py to that folder's kit when needed; restart GUI after Python changes.
