@@ -16,7 +16,7 @@ import threading
 import time
 import traceback
 import webbrowser
-from ai_providers import PROVIDERS, cli_command, run_agent, portable_prompt
+from ai_providers import PROVIDERS, cli_command, run_agent, portable_prompt, load_env_file
 from host_render import HostAnimation
 from language_policy import (ENGLISH_VOICES, english_voice, english_prompt, narration_hash,
                              normalize_narration_prompt, migrate_speech_settings, verify_english_recording)
@@ -105,6 +105,8 @@ def fresh_env():
 
 
 ENV = fresh_env()
+# API keys the user keeps in the studio's .env file (Gemini API).
+load_env_file(HOME / ".env", ENV)
 # Python libraries also use local caches when called directly rather than as children.
 for _key in ("TEMP", "TMP", "XDG_CACHE_HOME", "HF_HOME", "PIP_CACHE_DIR", "PLAYWRIGHT_BROWSERS_PATH"):
     os.environ[_key] = ENV[_key]
@@ -730,7 +732,7 @@ class Studio(ctk.CTk):
             menu = ctk.CTkOptionMenu(row_ai, values=list(PROVIDERS), command=save_provider)
             menu.set(self.settings.get(stage + "_provider", "Claude"))
             menu.pack(side="left", padx=6)
-            model = ctk.CTkEntry(row_ai, placeholder_text="Model (blank = CLI default)", width=220)
+            model = ctk.CTkEntry(row_ai, placeholder_text="Model (blank = default)", width=220)
             model.insert(0, self.settings.get(stage + "_model", ""))
             model.pack(side="left", padx=6)
             def save_model(event=None, stage=stage, entry=model):
