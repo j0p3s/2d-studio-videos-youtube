@@ -20,7 +20,7 @@
 - Android prototype in `Adnroid-App/` (spelling intentional): separate native renderer, not a GrowKaz port.
 
 ## 3. Key decisions and reasons
-- Offline mode (2026-11-11): provider "Ollama (offline)" plus a Setup switch "Always work offline" that overrides both provider menus, voices with Piper (Edge needs internet), sets `HF_HUB_OFFLINE` for Whisper and blocks Upload. Ollama is a system app like Git/Node, not studio-owned: its models live in the real user profile, so the server is started with the real environment, not the studio's.
+- Offline mode (2026-11-11): provider "Ollama (offline)" plus a Setup switch "Always work offline" that overrides both provider menus, voices with Piper (Edge needs internet), sets `HF_HUB_OFFLINE` for Whisper. Upload is NOT blocked in offline mode (user request 2026-11-11): the switch means local AI and voice, not no internet. Ollama is a system app like Git/Node, not studio-owned: its models live in the real user profile, so the server is started with the real environment, not the studio's.
 - Offline animation runs the Claude Code CLI against Ollama's Anthropic-compatible endpoint (`claude_env` in `app/ollama_provider.py`), so the same skill and tools are used and no Claude login is needed. The model is copied once with a 64k context (`agent_model`), because Ollama's default window is too small and that endpoint cannot set it per request.
 - Gemini API is an **additional** provider, not a replacement. A rewrite that replaced `ai_providers.py` broke the GUI calls, the provider menu, Codex and the tests, so the CLI providers were restored.
 - Animation with Gemini API goes through the Gemini CLI, because a plain API call cannot write files or run the render kit.
