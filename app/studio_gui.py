@@ -18,6 +18,7 @@ import traceback
 import webbrowser
 from ai_providers import PROVIDERS, cli_command, run_agent, portable_prompt, load_env_file
 from host_render import HostAnimation
+import session_log
 from language_policy import (ENGLISH_VOICES, english_voice, english_prompt, narration_hash,
                              normalize_narration_prompt, migrate_speech_settings, verify_english_recording)
 from datetime import datetime, timezone
@@ -34,6 +35,7 @@ SETTINGS_FILE = HOME / "settings.json"
 PROMPT_FILE = APP_DIR / "skills" / "scriptforge" / "SKILL.md"
 SKILLS_DIR = HOME / ".claude" / "skills"
 ERR_LOG = HOME / "gui_error.log"
+LOG_FILE = HOME / "studio.log"   # this session only; started fresh on every launch
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 
@@ -42,6 +44,7 @@ def _log_crash(exc_type, exc, tb):
         ERR_LOG.write_text("".join(traceback.format_exception(exc_type, exc, tb)), encoding="utf-8")
     except Exception:
         pass
+    session_log.error("Uncaught error", exc, tb)
     sys.__excepthook__(exc_type, exc, tb)
 
 
@@ -107,6 +110,29 @@ def fresh_env():
 ENV = fresh_env()
 # API keys the user keeps in the studio's .env file (Gemini API).
 load_env_file(HOME / ".env", ENV)
+session_log.start(LOG_FILE, ENV)
+session_log.write("INFO", f"2D Animation Studio started in {HOME} (Python {sys.version.split()[0]})")
+threading.excepthook = lambda a: session_log.error(f"Error in background thread {a.thread.name if a.thread else ''}",
+                                                   a.exc_value, a.exc_traceback)
+
+
+def _log_dialogs():
+    """Every message box the app shows is also written to the session log."""
+    def wrap(name, kind):
+        shown = getattr(messagebox, name)
+        def logged(title=None, message=None, **kw):
+            session_log.write(kind, f"[{title}] {message}")
+            answer = shown(title, message, **kw)
+            if name.startswith("ask"):
+                session_log.write("INFO", f"[{title}] answer: {answer}")
+            return answer
+        setattr(messagebox, name, logged)
+    for name, kind in (("showerror", "ERROR"), ("showwarning", "WARN"), ("showinfo", "INFO"),
+                       ("askyesno", "ASK"), ("askyesnocancel", "ASK"), ("askokcancel", "ASK")):
+        wrap(name, kind)
+
+
+_log_dialogs()
 # Python libraries also use local caches when called directly rather than as children.
 for _key in ("TEMP", "TMP", "XDG_CACHE_HOME", "HF_HOME", "PIP_CACHE_DIR", "PLAYWRIGHT_BROWSERS_PATH"):
     os.environ[_key] = ENV[_key]
@@ -184,6 +210,7 @@ class Studio(ctk.CTk):
         self.configure(fg_color="#0b0d10")
 
         self.q = queue.Queue()
+        self.report_callback_exception = lambda *err: session_log.error("Error in the window", err[1], err[2])
         self.proc = None
         self.busy = False
         self.settings = migrate_speech_settings(load_settings())
@@ -244,6 +271,8 @@ class Studio(ctk.CTk):
                       command=self.new_video).pack(fill="x", padx=18, pady=4)
         ctk.CTkButton(sb, text="📁 Open studio folder", height=34, fg_color="#1d222b", hover_color="#272d38",
                       command=lambda: open_path(HOME)).pack(fill="x", padx=18, pady=4)
+        ctk.CTkButton(sb, text="📜 Show logs", height=34, fg_color="#1d222b", hover_color="#272d38",
+                      command=self.show_logs).pack(fill="x", padx=18, pady=4)
         self._refresh_current()
 
     def _build_statusbar(self):
@@ -303,19 +332,82 @@ class Studio(ctk.CTk):
                 try:
                     fn(*a)
                 except Exception:
+                    session_log.error("Error while updating the window")
                     traceback.print_exc()
         except queue.Empty:
             pass
         self.after(80, self._pump)
 
     def log(self, box, text):
+        session_log.write("OUT", text)
         def _w():
             box.insert("end", text.rstrip() + "\n")
             box.see("end")
         self.ui(_w)
 
     def status(self, text):
+        session_log.write("STEP", text)
         self.ui(lambda: self.lbl_status.configure(text=text))
+
+    def show_logs(self):
+        """Window with this session's log; it follows the file while the studio works."""
+        win = getattr(self, "_log_win", None)
+        if win and win.winfo_exists():
+            win.lift()
+            win.focus()
+            return
+        win = self._log_win = ctk.CTkToplevel(self)
+        win.title("2D Animation Studio — logs (this session)")
+        win.geometry("980x620")
+        win.configure(fg_color="#0b0d10")
+        bar = ctk.CTkFrame(win, fg_color="transparent")
+        bar.pack(fill="x", padx=12, pady=(10, 4))
+        box = self.logbox(win)
+        box.pack(fill="both", expand=True, padx=12, pady=(4, 12))
+        errors_only = ctk.BooleanVar(value=False)
+        shown = {"size": -1, "errors": None}
+
+        def read():
+            try:
+                return LOG_FILE.read_text(encoding="utf-8", errors="replace")
+            except OSError as e:
+                return f"The log file cannot be read: {e}"
+
+        def errors(text):
+            # Every line of an entry, traceback included, carries the entry's tag after the time.
+            return "\n".join(l for l in text.splitlines() if l[9:14] in ("ERROR", "WARN ")) or "No errors so far."
+
+        def refresh():
+            if not win.winfo_exists():
+                return
+            try:
+                size = LOG_FILE.stat().st_size
+            except OSError:
+                size = 0
+            if (size, errors_only.get()) != (shown["size"], shown["errors"]):
+                at_end = box.yview()[1] > 0.999 or shown["errors"] != errors_only.get()
+                text = read()
+                box.configure(state="normal")
+                box.delete("1.0", "end")
+                box.insert("end", errors(text) if errors_only.get() else text)
+                box.configure(state="disabled")
+                if at_end:
+                    box.see("end")
+                shown.update(size=size, errors=errors_only.get())
+            win.after(1000, refresh)
+
+        def copy():
+            self.clipboard_clear()
+            self.clipboard_append(read())
+
+        ctk.CTkLabel(bar, text=str(LOG_FILE), text_color="#7c8594", font=ctk.CTkFont(size=11)).pack(side="left")
+        ctk.CTkButton(bar, text="Open file", width=90, fg_color="#1d222b", hover_color="#272d38",
+                      command=lambda: open_path(LOG_FILE)).pack(side="right", padx=(6, 0))
+        ctk.CTkButton(bar, text="Copy all", width=90, fg_color="#1d222b", hover_color="#272d38",
+                      command=copy).pack(side="right", padx=(6, 0))
+        ctk.CTkCheckBox(bar, text="Errors only", variable=errors_only, width=110).pack(side="right", padx=(6, 0))
+        win.after(200, win.lift)   # CTkToplevel opens behind the main window on Windows
+        refresh()
 
     # ------------------------------------------------------------------ progress
     @staticmethod
@@ -372,6 +464,7 @@ class Studio(ctk.CTk):
         self.busy = True
         self._job_ai = {k: v for k, v in self.settings.items() if k.endswith(("_provider", "_model"))}
         self._cancel = False
+        session_log.write("STEP", f"Started: {label}  ({', '.join(f'{k}={v or chr(45)}' for k, v in self._job_ai.items())})")
         self._job = {"label": label, "t0": time.time(), "frac": 0.0, "text": "", "eta": None, "indet": indeterminate}
         self.progress.configure(mode="indeterminate" if indeterminate else "determinate")
         if indeterminate:
@@ -388,10 +481,16 @@ class Studio(ctk.CTk):
                 res = fn()
             except Exception as e:
                 err = e
+                if self._cancel:
+                    session_log.write("STEP", f"Stopped by the user: {label} ({e})")
+                else:
+                    session_log.error(f"Failed: {label}")
                 traceback.print_exc()
 
             def finish():
                 el = time.time() - self._job["t0"] if self._job else 0
+                if not err:
+                    session_log.write("STEP", f"Done: {label} (took {self._fmt_t(el)})")
                 self.busy = False
                 self.proc = None
                 self._job = None
@@ -427,6 +526,7 @@ class Studio(ctk.CTk):
         self.status("Stopping…")
 
     def run_cmd(self, cmd, cwd=None, stdin_text=None, on_line=None):
+        session_log.write("RUN", f"{subprocess.list2cmdline([str(c) for c in cmd])[:600]}  (in {cwd or os.getcwd()})")
         self.proc = subprocess.Popen(
             cmd, cwd=cwd, env=ENV, stdin=subprocess.PIPE if stdin_text is not None else subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
@@ -435,15 +535,20 @@ class Studio(ctk.CTk):
             self.proc.stdin.write(stdin_text)
             self.proc.stdin.close()
         for line in self.proc.stdout:
+            session_log.write("OUT", line)
             if on_line:
                 on_line(line.rstrip("\n"))
-        return self.proc.wait()
+        code = self.proc.wait()
+        session_log.write("RUN", f"exit code {code}: {Path(str(cmd[0])).name}")
+        return code
 
     def ask_ai(self, prompt, box=None, tools=None, full_auto=False, cwd=None, expect_chars=None, on_tool=None):
         prompt = english_prompt(prompt)
         stage = "animation" if tools else "script"
         ai = getattr(self, "_job_ai", self.settings)
         provider = ai.get(stage + "_provider", "Claude")
+        session_log.write("STEP", f"Asking {provider} ({stage}, model {ai.get(stage + '_model') or 'default'}, "
+                                  f"prompt {len(prompt)} characters)")
         if provider == "Claude":
             return self.ask_claude(prompt, box, tools, full_auto, cwd, expect_chars, on_tool)
         self.prog(0.03, f"starting {provider}")
