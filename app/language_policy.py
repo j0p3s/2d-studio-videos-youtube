@@ -20,8 +20,11 @@ def english_voice(saved):
 
 def migrate_speech_settings(settings):
     settings['voice'] = english_voice(settings.get('voice'))
-    if settings.get('engine') != 'Piper (offline)':
-        settings['engine'] = 'Free (Edge)'
+    # Piper is the default engine. Settings saved before it existed always said Edge, so that
+    # value only counts as the user's choice once 'piper_default' has been recorded.
+    if settings.get('engine') != 'Free (Edge)' or not settings.get('piper_default'):
+        settings['engine'] = 'Piper (offline)'
+    settings['piper_default'] = True
     current = settings.get('current', {})
     if current.get('voice') and current.get('lang') != 'en':
         # Remove references only; existing media files are historical user artifacts.
