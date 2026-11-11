@@ -8,9 +8,10 @@ rem ==========================================================================
 rem  2D Animation Studio installer
 rem  Installs: Git, Node.js LTS, Python 3.12, FFmpeg, Claude Code CLI,
 rem            GrowKaz Stickman Studio (three.js + Playwright Chromium),
-rem            Python libs (numpy, scipy, faster-whisper, edge-tts, YouTube API,
+rem            Python libs (numpy, scipy, faster-whisper, edge-tts, piper-tts, YouTube API,
 rem            customtkinter, pillow), the plugin skills + ScriptForge skill,
-rem            the Whisper speech model (so timestamps work with no internet),
+rem            the Whisper speech model and a Piper voice (so timestamps and
+rem            voiceover work with no internet),
 rem            all studio settings beside this installer.
 rem  Optional: offline mode - Ollama and a local AI model (about 15 GB).
 rem            Codex and the Gemini CLI are installed from the GUI Setup page.
@@ -152,11 +153,14 @@ call :banner "6/8  Python packages"
 %PY% -m venv --system-site-packages "%HOME2D%\.venv"
 if errorlevel 1 exit /b 1
 set PY="%HOME2D%\.venv\Scripts\python.exe"
-%PY% -m pip install --upgrade numpy scipy faster-whisper edge-tts customtkinter pillow google-api-python-client google-auth-oauthlib google-auth-httplib2
+%PY% -m pip install --upgrade numpy scipy faster-whisper edge-tts piper-tts customtkinter pillow google-api-python-client google-auth-oauthlib google-auth-httplib2
 %PY% -c "import sys, pathlib; pathlib.Path(r'%HOME2D%\python.txt').write_text(r'.venv\Scripts\python.exe')"
 echo   downloading the Whisper speech model (about 500 MB, once) ...
 %PY% -c "from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8')"
 if errorlevel 1 (echo   [!] Whisper model not downloaded - it will download on the first video instead.) else (echo   [ok] Whisper model ready for offline use)
+echo   downloading the Piper offline voice (about 120 MB, once) ...
+if not exist "%HOME2D%\.cache\piper\en_US-ryan-high.onnx" %PY% -m piper.download_voices --download-dir "%HOME2D%\.cache\piper" en_US-ryan-high
+if exist "%HOME2D%\.cache\piper\en_US-ryan-high.onnx" (echo   [ok] Piper voice ready for offline use) else (echo   [!] Piper voice not downloaded - it will download on the first offline voiceover instead.)
 
 rem ---------- 7. Offline mode (optional) --------------------------------------
 call :banner "7/8  Offline mode (optional): Ollama + local AI model"

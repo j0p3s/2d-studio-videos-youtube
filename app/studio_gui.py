@@ -19,7 +19,7 @@ import webbrowser
 from ai_providers import PROVIDERS, cli_command, run_agent, portable_prompt, load_env_file
 from host_render import HostAnimation
 import session_log
-import offline_voice
+import piper_voice
 import ollama_provider
 from ollama_provider import OLLAMA
 from language_policy import (ENGLISH_VOICES, english_voice, english_prompt, narration_hash,
@@ -31,6 +31,7 @@ APP_DIR = Path(__file__).resolve().parent
 from portable_paths import local_environment
 
 HOME = APP_DIR.parent
+PIPER_DIR = HOME / ".cache" / "piper"   # downloaded Piper voices
 STUDIO = HOME / "growkaz-stickman-studio"
 WORK = HOME / "work"
 YT_DIR = HOME / "youtube"
@@ -587,7 +588,7 @@ class Studio(ctk.CTk):
                          skill_dir=SKILLS_DIR / "make-2d-video", on_event=event)
 
     def offline(self):
-        """True when "Always work offline" is on: local AI, Windows voice, no uploads."""
+        """True when "Always work offline" is on: local AI, Piper voice, no uploads."""
         return bool(self.settings.get("offline"))
 
     def apply_offline(self):
@@ -907,7 +908,7 @@ class Studio(ctk.CTk):
             model.bind("<Return>", save_model)
         row_off = ctk.CTkFrame(ai, fg_color="transparent")
         row_off.pack(fill="x", padx=12, pady=5)
-        self.sw_offline = ctk.CTkSwitch(row_off, text="Always work offline (Ollama + Windows voice, no upload)",
+        self.sw_offline = ctk.CTkSwitch(row_off, text="Always work offline (Ollama + Piper voice, no upload)",
                                         command=self._toggle_offline)
         if self.offline():
             self.sw_offline.select()
@@ -946,6 +947,8 @@ class Studio(ctk.CTk):
         save_settings(self.settings)
         self.apply_offline()
         session_log.write("INFO", f"Always work offline: {'on' if self.offline() else 'off'}")
+        if hasattr(self, "opt_engine"):
+            self._on_engine(self.settings.get("engine"))
         self._refresh_offline_badge()
 
     def _refresh_offline_badge(self):
@@ -997,10 +1000,10 @@ class Studio(ctk.CTk):
             ollama = ("installed (not running)" if names is None else
                       f"{model} ready" if ollama_provider._installed(model, names) else None)
         whisper = any((Path(ENV.get("HF_HOME", "")) / "hub").glob("models--Systran--faster-whisper-*/snapshots/*/model.bin"))
-        voices = offline_voice.voices()
+        voice = piper_voice.piper_voice(self.settings.get("piper_voice"))
         return [("Ollama + offline model (optional)", ollama),
                 ("Whisper model (offline timestamps)", "downloaded" if whisper else None),
-                ("Windows voice (offline)", voices[0][0] if voices else None)]
+                ("Piper voice (offline)", voice if piper_voice.installed(voice, PIPER_DIR) else None)]
 
     def check_setup(self):
         n_checks = {"i": 0}
@@ -1033,6 +1036,7 @@ class Studio(ctk.CTk):
                 except RuntimeError:
                     items.append((provider + " CLI (optional)", None))
             for mod, label in [("faster_whisper", "faster-whisper"), ("edge_tts", "edge-tts (voices)"),
+                               ("piper", "Piper (offline voice)"),
                                ("googleapiclient", "YouTube API client"), ("PIL", "Pillow (thumbnails)")]:
                 try:
                     __import__(mod)
@@ -1071,10 +1075,17 @@ class Studio(ctk.CTk):
                     self.prog(min(0.55, 0.55 * seen["n"] / 60), f"Python packages ({seen['n']} checked)")
                 elif l.startswith("Installing collected"):
                     self.prog(0.58, "installing Python packages")
-            self.run_cmd([PY, "-m", "pip", "install", "--upgrade", "numpy", "scipy", "faster-whisper", "edge-tts",
+            self.run_cmd([PY, "-m", "pip", "install", "--upgrade", "numpy", "scipy", "faster-whisper", "edge-tts", "piper-tts",
                           "customtkinter", "pillow", "google-api-python-client", "google-auth-oauthlib",
                           "google-auth-httplib2"], on_line=pip_line)
             self.check_cancel()
+            voice = piper_voice.piper_voice(self.settings.get("piper_voice"))
+            if not piper_voice.installed(voice, PIPER_DIR):
+                self.prog(0.6, f"downloading the Piper voice {voice}")
+                try:
+                    piper_voice.download(voice, PIPER_DIR)
+                except RuntimeError as error:       # optional: it downloads on first use instead
+                    self.log(self.setup_log, str(error))
             if STUDIO.exists():
                 self.prog(0.62, "applying the browser/progress patch")
                 self.run_cmd([PY, str(APP_DIR / "patch_kit.py"), str(STUDIO)], on_line=lambda l: self.log(self.setup_log, l))
@@ -1420,11 +1431,11 @@ class Studio(ctk.CTk):
 
     # ================================================================== VOICE PAGE
     def _page_voice(self, p):
-        self.header(p, "② Voiceover", "English narration with natural Microsoft Neural voices for every AI provider. "
-                    "Imported recordings must also be in English.")
+        self.header(p, "② Voiceover", "English narration: Microsoft Neural voices (online) or Piper voices that run on this PC "
+                    "(offline). Imported recordings must also be in English.")
         eng = self.card(p)
         ctk.CTkLabel(eng, text="Voice engine").grid(row=0, column=0, padx=(16, 6), pady=12)
-        self.opt_engine = ctk.CTkSegmentedButton(eng, values=["Free (Edge)"], command=self._on_engine)
+        self.opt_engine = ctk.CTkSegmentedButton(eng, values=["Free (Edge)", piper_voice.ENGINE], command=self._on_engine)
         self.opt_engine.grid(row=0, column=1, padx=(0, 16))
         self.el_frame = ctk.CTkFrame(eng, fg_color="transparent")
         ctk.CTkLabel(self.el_frame, text="API key").pack(side="left")
@@ -1472,15 +1483,16 @@ class Studio(ctk.CTk):
         self._on_engine(self.opt_engine.get())
 
     def _on_engine(self, v):
-        v = "Free (Edge)"
-        self.opt_engine.set(v)
-        if v == "ElevenLabs":
-            self.el_frame.grid(row=0, column=2, sticky="w", pady=8)
-        else:
-            self.el_frame.grid_forget()
-        state = "disabled" if v == "ElevenLabs" else "normal"
-        self.opt_voice.configure(state=state)
-        self.settings["engine"] = v
+        if not self.offline():                      # offline mode forces Piper without changing the choice
+            self.settings["engine"] = piper_voice.ENGINE if v == piper_voice.ENGINE else "Free (Edge)"
+        piper = self.offline() or self.settings["engine"] == piper_voice.ENGINE
+        self.opt_engine.set(piper_voice.ENGINE if piper else "Free (Edge)")
+        self.el_frame.grid_forget()
+        shown = self.opt_voice.get()               # keep the voice picked for the other engine
+        self.settings["piper_voice" if shown in piper_voice.VOICES else "voice"] = shown
+        self.opt_voice.configure(state="normal", values=piper_voice.VOICES if piper else VOICES)
+        self.opt_voice.set(piper_voice.piper_voice(self.settings.get("piper_voice")) if piper
+                           else english_voice(self.settings.get("voice")))
 
     def _el_request(self, path, payload=None):
         import urllib.request
@@ -1728,9 +1740,15 @@ class Studio(ctk.CTk):
         if not text:
             messagebox.showinfo("Voiceover", "The narration is empty.")
             return
-        voice, rate = english_voice(self.opt_voice.get()), int(self.sld_rate.get())
+        rate, shown = int(self.sld_rate.get()), self.opt_voice.get()
+        piper = bool(self.settings.get("offline")) or self.settings.get("engine") == piper_voice.ENGINE
+        if piper:
+            voice = piper_voice.piper_voice(shown if shown in piper_voice.VOICES else self.settings.get("piper_voice"))
+            self.settings.update({"piper_voice": voice, "rate": rate})
+        else:
+            voice = english_voice(shown)
+            self.settings.update({"voice": voice, "rate": rate, "engine": "Free (Edge)"})
         self.opt_voice.set(voice)
-        self.settings.update({"voice": voice, "rate": rate, "engine": "Free (Edge)"})
         out = d / "voiceover.mp3"
         english_verified = self.s.get("narration_en_hash") == narration_hash(text)
 
@@ -1739,10 +1757,9 @@ class Studio(ctk.CTk):
             self.check_cancel()
             (d / "script.txt").write_text(narration + "\n", encoding="utf-8")
             (d / "voiceover.srt").unlink(missing_ok=True)   # leftover from the old single-request method
-            if self.settings.get("offline"):
-                self.prog(None, "speaking with the Windows voice (offline)")
-                return offline_voice.speak(narration, out, rate=rate, voice=self.settings.get("offline_voice", ""),
-                                           env=ENV), narration
+            if piper:
+                self.prog(None, f"speaking with the Piper voice {voice} (on this PC)")
+                return piper_voice.speak(narration, out, voice=voice, rate=rate, folder=PIPER_DIR, env=ENV), narration
             return self._make_voice_edge(narration, d, out, voice, rate), narration
 
         def done(o):
@@ -1751,7 +1768,7 @@ class Studio(ctk.CTk):
             self.s.pop("thumb", None)
             self.s.update({"voice": str(audio), "lang": "en", "narration": narration,
                            "narration_en_hash": narration_hash(narration),
-                           "speech_engine": "windows-offline" if self.settings.get("offline") else "microsoft-neural"})
+                           "speech_engine": "piper-offline" if piper else "microsoft-neural"})
             self.txt_narr.delete("1.0", "end")
             self.txt_narr.insert("1.0", narration)
             self.save_state()
