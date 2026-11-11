@@ -6,6 +6,7 @@ youtube/
 client_secret*.json
 token.json
 gui_error.log
+studio.log
 
 # Portable installation: private configuration, credentials, caches and generated media
 .claude/
