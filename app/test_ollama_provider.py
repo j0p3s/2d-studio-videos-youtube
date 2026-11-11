@@ -3,7 +3,7 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import offline_voice
+import piper_voice
 import ollama_provider as ollama
 from ai_providers import OLLAMA, PROVIDERS, run_agent
 
@@ -106,9 +106,14 @@ class OllamaTests(unittest.TestCase):
         self.assertEqual(ollama.base_url({"OLLAMA_HOST": "0.0.0.0:11434"}), "http://127.0.0.1:11434")
 
 
-class OfflineVoiceTests(unittest.TestCase):
-    def test_speed_maps_to_the_windows_scale(self):
-        self.assertEqual([offline_voice.sapi_rate(p) for p in (-100, -10, 0, 12, 50, 100)], [-10, -2, 0, 2, 10, 10])
+class PiperVoiceTests(unittest.TestCase):
+    def test_speed_maps_to_the_piper_length_scale(self):
+        self.assertEqual([piper_voice.length_scale(p) for p in (-100, -20, 0, 25, 100)], [2.0, 1.25, 1.0, 0.8, 0.5])
+
+    def test_unknown_voice_falls_back_and_missing_model_is_not_installed(self):
+        self.assertEqual(piper_voice.piper_voice("en-US-AndrewMultilingualNeural"), piper_voice.DEFAULT_VOICE)
+        self.assertEqual(piper_voice.piper_voice("en_GB-alan-medium"), "en_GB-alan-medium")
+        self.assertFalse(piper_voice.installed(piper_voice.DEFAULT_VOICE, "no-such-folder"))
 
 
 if __name__ == "__main__":
