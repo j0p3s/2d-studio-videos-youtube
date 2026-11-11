@@ -79,3 +79,11 @@ Codex animation on Windows uses the standalone CLI from Setup, an explicitly tru
 For Codex video generation, the writable workspace is the current project. The app launches the installed renderer, renders real contact sheets for the agent to inspect, and performs the final render, mix and audio/video-duration checks. The agent cannot change the installed renderer or engine outside its project. A pass is checkpointed only after explicit visual approval; changed project files invalidate the checkpoint. This avoids Chromium spawn EPERM inside the Windows sandbox without granting the agent unrestricted access.
 
 Visual QC allows three repair rounds plus a separate verification render. Pending QC is saved after each repair, so Auto resumes visual inspection without rebuilding the current pass. Approval is accepted only when the agent did not change project files after the reviewed images were rendered.
+
+## License
+
+Copyright (C) 2026 j0p3s
+
+This project is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 3. It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See [LICENSE](LICENSE) for the full text.
+
+The license covers the studio's own code (`app/`, the `.cmd` scripts and `Adnroid-App/`). It does not cover third-party material kept in this repository, which stays under its authors' terms: `plugin/GrowKaz_Stickman.plugin` (the GrowKaz Stickman kit, by GrowKaz) and `2D Niche Prompt for Claude.pdf`. Packages installed by the installer (for example edge-tts, piper-tts, faster-whisper) keep their own licenses.
