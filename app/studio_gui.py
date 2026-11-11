@@ -859,11 +859,19 @@ class Studio(ctk.CTk):
     def install_ai(self, provider):
         package = "@openai/codex" if provider == "OpenAI (Codex)" else "@google/gemini-cli"
         def work():
-            rc = self.run_cmd(["cmd", "/c", "npm", "install", "--prefix", str(HOME / ".tools"), "-g", package],
+            cmd = ["cmd", "/c", "npm", "install", "--prefix", str(HOME / ".tools"), "-g"]
+            if provider == "Gemini":
+                # npm requires explicit approval for this native credential-store dependency.
+                # Keep approval on this command, rather than changing the user's npm config.
+                cmd.append("--allow-scripts=@github/keytar")
+                self.log(self.setup_log, "Allowing Gemini's @github/keytar install script for this installation.")
+            cmd.append(package)
+            rc = self.run_cmd(cmd,
                               on_line=lambda line: self.log(self.setup_log, line))
             if rc:
                 raise RuntimeError(f"Could not install {provider}. See the Setup log.")
             ENV.update(fresh_env())
+            self.log(self.setup_log, f"{provider} installed. Deprecation warnings alone do not mean installation failed.")
         self.run_job(f"Installing {provider}", work, lambda _: self.check_setup())
 
     def login_ai(self, provider):
