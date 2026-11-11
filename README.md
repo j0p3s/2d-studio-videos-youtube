@@ -9,7 +9,7 @@ A one-click setup and desktop app for making faceless, animated, stick-figure Yo
    - Git, Node.js LTS, Python 3.12 and FFmpeg (through winget)
    - the Claude Code CLI
    - the **GrowKaz Stickman Studio**, taken from `plugin\GrowKaz_Stickman.plugin`, along with three.js, Playwright and a headless Chromium
-   - Python packages: numpy, scipy, faster-whisper, edge-tts, customtkinter, Pillow and the YouTube API client
+   - Python packages: numpy, scipy, faster-whisper, edge-tts, piper-tts, customtkinter, Pillow and the YouTube API client
    - Claude Code skills: `make-2d-video`, `new-video`, `render-video`, `video-sound`, `video-styles` and **`scriptforge`** (the "2D Niche Prompt" PDF turned into a skill)
 2. Everything owned by the studio lives beside `Install-2D-Studio.cmd` and `Launch-2D-Studio.cmd`: settings, YouTube credentials, projects, AI settings, skills, caches and the local Python environment. Keep this folder in a writable location.
 3. In **Setup**, choose your providers for **Ideas & script** and **Animation & character designs** independently. Claude remains the default. Sign in to each provider you select.
