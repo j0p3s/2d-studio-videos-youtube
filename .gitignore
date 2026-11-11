@@ -16,3 +16,6 @@ gui_error.log
 .venv/
 growkaz-stickman-studio/
 python.txt
+
+# Local API keys
+.env

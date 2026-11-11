@@ -1,16 +1,94 @@
-"""Local coding-agent adapters. Authentication stays in each vendor's CLI."""
+"""Local coding-agent adapters, plus Google's Gemini API called directly with an API key.
+
+CLI authentication stays in each vendor's CLI. The Gemini API key is read from the
+environment (GEMINI_API_KEY or GOOGLE_API_KEY), which the app fills from the studio's .env file.
+"""
 import json
 import os
 import re
 import shutil
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
-PROVIDERS = ("Claude", "OpenAI (Codex)", "Gemini")
+GEMINI_API = "Gemini API"
+PROVIDERS = ("Claude", "OpenAI (Codex)", "Gemini", GEMINI_API)
+GEMINI_API_MODEL = "gemini-3.8-flash"
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+GEMINI_API_TIMEOUT = 600  # long scripts take minutes to generate
+
+
+def load_env_file(path, env):
+    """Add KEY=VALUE lines from a .env file to env. Values already set in env win."""
+    try:
+        lines = Path(path).read_text(encoding="utf-8-sig").splitlines()
+    except OSError:
+        return env
+    for line in lines:
+        key, sep, value = line.strip().partition("=")
+        key = key.removeprefix("export ").strip()
+        if sep and key and not key.startswith("#") and not env.get(key):
+            env[key] = value.strip().strip("\"'")
+    return env
+
+
+def gemini_api_key(env=None):
+    env = os.environ if env is None else env
+    key = env.get("GEMINI_API_KEY") or env.get("GOOGLE_API_KEY")
+    if not key:
+        raise RuntimeError("Gemini API key not found. Put GEMINI_API_KEY=your-key in the .env file "
+                           "in the studio folder, then restart the app.")
+    return key
+
+
+def gemini_api_text(prompt, *, model="", env=None, retries=3):
+    """One text answer from the Gemini API. The key travels in a header, never in the URL."""
+    env = os.environ if env is None else env
+    model = model or env.get("GEMINI_MODEL") or GEMINI_API_MODEL
+    request = urllib.request.Request(
+        GEMINI_API_URL.format(model=model),
+        data=json.dumps({"contents": [{"role": "user", "parts": [{"text": prompt}]}]}).encode("utf-8"),
+        headers={"Content-Type": "application/json", "x-goog-api-key": gemini_api_key(env)})
+    for attempt in range(1, retries + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=GEMINI_API_TIMEOUT) as response:
+                body = json.loads(response.read().decode("utf-8"))
+            break
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", "replace")
+            try:
+                detail = json.loads(detail)["error"]["message"]
+            except (ValueError, KeyError, TypeError):
+                pass
+            if e.code in (429, 500, 503) and attempt < retries:
+                time.sleep(2 * attempt)
+                continue
+            raise RuntimeError(f"Gemini API failed ({e.code}, model {model}): {detail[:500]}")
+        except (TimeoutError, urllib.error.URLError) as e:
+            if isinstance(e, TimeoutError) or isinstance(getattr(e, "reason", None), TimeoutError):
+                # Retrying a request that already waited the full timeout would stall the app for longer.
+                raise RuntimeError(f"Gemini API did not answer within {GEMINI_API_TIMEOUT} s (model {model}). "
+                                   "The model may be overloaded: try again later or pick another model in Setup.")
+            if attempt < retries:
+                time.sleep(2 * attempt)
+                continue
+            raise RuntimeError(f"Gemini API could not be reached (model {model}): {e}")
+    try:
+        parts = body["candidates"][0]["content"]["parts"]
+        text = "".join(p.get("text", "") for p in parts if not p.get("thought"))
+    except (KeyError, IndexError, TypeError):
+        text = ""
+    if not text.strip():
+        reason = ((body.get("promptFeedback") or {}).get("blockReason")
+                  or ((body.get("candidates") or [{}])[0]).get("finishReason") or "empty response")
+        raise RuntimeError(f"Gemini API returned no text (model {model}): {reason}")
+    return text
 
 
 def cli_command(provider, env=None):
     env = env or os.environ
-    name = {"Claude": "claude", "OpenAI (Codex)": "codex", "Gemini": "gemini"}[provider]
+    name = {"Claude": "claude", "OpenAI (Codex)": "codex", "Gemini": "gemini", GEMINI_API: "gemini"}[provider]
     exe = shutil.which(name, path=env.get("PATH"))
     if name == "codex" and exe and "/openai/codex/bin/" in str(exe).replace("\\", "/").lower():
         raise RuntimeError("The selected executable belongs to Codex Desktop. Install the standalone CLI for the studio. "
@@ -64,7 +142,7 @@ def agent_command(provider, *, animation=False, full_auto=False, model="", env=N
         if model:
             cmd += ["--model", model]
         cmd += ["-"]
-    elif provider == "Gemini":
+    elif provider in ("Gemini", GEMINI_API):
         cmd += ["--output-format", "stream-json", "--skip-trust", "--approval-mode",
                 "yolo" if animation and full_auto else "auto_edit" if animation else "plan",
                 "--prompt", "Read the task from standard input and complete it."]
@@ -131,6 +209,18 @@ def run_agent(provider, prompt, run_cmd, *, cwd, env=None, animation=False,
               full_auto=False, model="", skill_dir=None, on_event=None):
     if animation and (not skill_dir or not (Path(skill_dir) / 'SKILL.md').is_file()):
         raise RuntimeError("GrowKaz skill missing. Re-run the studio installer from Setup.")
+    if provider == GEMINI_API:
+        env = os.environ if env is None else env
+        if not animation:
+            # Ideas and scripts are plain text: one direct API call, no CLI needed.
+            text = gemini_api_text(portable_prompt(prompt, skill_dir, False), model=model, env=env)
+            if on_event:
+                on_event("text", text)
+            return text
+        # Animation needs an agent that writes files and runs the render kit, which a plain API
+        # call cannot do. The Gemini CLI does it, signed in with the same API key.
+        gemini_api_key(env)
+        model = model or env.get("GEMINI_MODEL", "")
     stream = EventStream(provider)
     diagnostics = []
     def receive(line):
