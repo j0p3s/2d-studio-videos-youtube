@@ -13,7 +13,7 @@
 - PR #14: Gemini installation allows only @github/keytar's install script for that command; upstream deprecation warning can remain.
 - PR #15: failed speech passages recover sequentially in smaller cached pieces. A real 9-passage narration recovered to 529.44 s and decoded cleanly.
 - PR #16: Codex Windows animation explicitly trusts its workspace, enables a Windows sandbox when unset, preserves existing choices, enables rendering network access and stops blocked passes immediately.
-- Current validation: sandboxed scene creation works, but Chrome spawn EPERM blocked contact-sheet QC. New app/host_render.py runs rendering/mixing in the app, requests agent visual review, and checkpoints approved passes. Real host rendering and sandboxed agent image inspection succeeded; 26 Python tests pass. The complete new flow is not yet run end to end.
+- Current validation: sandboxed scene creation works, but Chrome spawn EPERM blocked contact-sheet QC. New app/host_render.py runs rendering/mixing in the app, requests agent visual review, and checkpoints approved passes plus pending QC. Three repairs get a separate final verification; resume skips rebuilding a pending pass. Real host rendering and sandboxed agent image inspection succeeded; 29 Python tests pass. The complete new flow is not yet run end to end.
 - Android prototype exists in `Adnroid-App/` (spelling intentional): independent native renderer, free Edge speech, API-based AI, diagnostic exports. Device-tested 10-minute silent 1080p render; not a GrowKaz port.
 
 ## 3. Key decisions and reasons
