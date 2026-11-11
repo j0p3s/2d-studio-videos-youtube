@@ -5,6 +5,7 @@ An independent Android 15+ prototype is in [Adnroid-App](Adnroid-App/README.md):
 A one-click setup and desktop app for making faceless, animated, stick-figure YouTube videos with Claude Code, OpenAI Codex or Gemini, then uploading them. It does the same thing as the Grow With Kaz tutorial without the copy-paste steps.
 
 ## Install
+0. The GrowKaz Stickman kit is not part of this repository. Get `GrowKaz_Stickman.plugin` from its author (Grow With Kaz) and put it in the `plugin\` folder beside the installer, or in your Downloads folder.
 1. Double-click **`Install-2D-Studio.cmd`**. It installs whatever is missing:
    - Git, Node.js LTS, Python 3.12 and FFmpeg (through winget)
    - the Claude Code CLI
@@ -86,4 +87,4 @@ Copyright (C) 2026 j0p3s
 
 This project is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 3. It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See [LICENSE](LICENSE) for the full text.
 
-The license covers the studio's own code (`app/`, the `.cmd` scripts and `Adnroid-App/`). It does not cover third-party material kept in this repository, which stays under its authors' terms: `plugin/GrowKaz_Stickman.plugin` (the GrowKaz Stickman kit, by GrowKaz) and `2D Niche Prompt for Claude.pdf`. Packages installed by the installer (for example edge-tts, piper-tts, faster-whisper) keep their own licenses.
+The license covers the studio's own code (`app/`, the `.cmd` scripts and `Adnroid-App/`). The GrowKaz Stickman kit (`GrowKaz_Stickman.plugin`, by GrowKaz) is third-party, is not included here and stays under its author's terms. Packages installed by the installer (for example edge-tts, piper-tts, faster-whisper) keep their own licenses.

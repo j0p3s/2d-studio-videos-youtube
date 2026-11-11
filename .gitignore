@@ -18,5 +18,9 @@ studio.log
 growkaz-stickman-studio/
 python.txt
 
+# Third-party material: supplied by the user, never committed
+plugin/
+2D Niche Prompt for Claude.pdf
+
 # Local API keys
 .env
