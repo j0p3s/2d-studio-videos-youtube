@@ -17,6 +17,7 @@ import time
 import traceback
 import webbrowser
 from ai_providers import PROVIDERS, cli_command, run_agent, portable_prompt
+from host_render import HostAnimation
 from language_policy import (ENGLISH_VOICES, english_voice, english_prompt, narration_hash,
                              normalize_narration_prompt, migrate_speech_settings, verify_english_recording)
 from datetime import datetime, timezone
@@ -1556,7 +1557,7 @@ class Studio(ctk.CTk):
         self.chk_sfx.grid(row=2, column=2, columnspan=2, sticky="w")
         self.chk_capt = ctk.CTkCheckBox(g, text="Burned-in captions")
         self.chk_capt.grid(row=2, column=4, sticky="w")
-        self.chk_auto = ctk.CTkCheckBox(g, text="Full auto (skip all permission checks)")
+        self.chk_auto = ctk.CTkCheckBox(g, text="Full auto (Claude/Gemini only)")
         self.chk_auto.grid(row=2, column=5, columnspan=3, sticky="w")
         lab("Parts", 3, 0)
         self.opt_parts = ctk.CTkOptionMenu(g, values=["Auto", "1", "2", "3", "4", "5", "6"], width=90)
@@ -1792,6 +1793,27 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
             self._anim_hint = "Animation agent is reading the skill"
             threading.Thread(target=self._watch_pipeline, args=(self.s["slug"], t0, stop), daemon=True).start()
             try:
+                if self._job_ai.get('animation_provider', 'Claude') == 'OpenAI (Codex)':
+                    self.log(self.anim_log, 'Codex stays sandboxed; the app renders contact sheets and the final video.')
+                    project = STUDIO / 'projects' / self.s['slug']
+                    def ask(pr):
+                        return self.ask_ai(pr + f'\nYour writable workspace is {project}. '
+                                           f'The installed studio is {STUDIO}; read its tools and engine, '
+                                           'but write only within this project. Use absolute tool paths or '
+                                           'change directory to the studio when calling its Python tools. '
+                                           'Keep any new temporary/model cache files inside this project.',
+                                           box=self.anim_log, tools=tools, full_auto=False, cwd=project,
+                                           on_tool=self._anim_tool_hint)
+                    def run(cmd):
+                        lines = []
+                        def receive(line):
+                            lines.append(line)
+                            self.log(self.anim_log, line)
+                        rc = self.run_cmd(cmd, cwd=str(STUDIO), on_line=receive)
+                        return rc, '\n'.join(lines)
+                    host = HostAnimation(STUDIO, self.s['slug'], PY, run, ask, self.check_cancel)
+                    host.project.mkdir(parents=True, exist_ok=True)
+                    return host.execute(prompts, dur)
                 for i, pr in enumerate(prompts, 1):
                     self.check_cancel()
                     if len(prompts) > 1:
