@@ -1,4 +1,4 @@
-# HANDOFF — 2D Animation Studio (2026-11-11, after PR #27)
+# HANDOFF — 2D Animation Studio (2026-11-11, after PR #28)
 
 ## 1. Goal
 - Portable Windows studio: ideas → script → narration → GrowKaz animation → thumbnail → explicit YouTube upload.
@@ -6,7 +6,7 @@
 - It must keep working with no AI credits: local AI through Ollama and a local Piper voice.
 
 ## 2. Current status
-- Repo: private `j0p3s/2d-studio-videos-youtube`. `main` is at PR #27 (empty-answer retry, this handoff, GPL-3.0 license); no open PRs. The source checkout is on `main`, level with `origin/main`.
+- Repo: **public** `j0p3s/2d-studio-videos-youtube` (earlier notes wrongly said private). `main` is at PR #28 (third-party files untracked; #27 was the empty-answer retry and GPL-3.0 license); no open PRs. The source checkout is on `main`, level with `origin/main`.
 - Source checkout: `C:/Users/Joao/Desktop/2D-Animation-Studio-Setup` (git). Active app folder the user launches: `C:/Users/Joao/Desktop/2d-studio-videos-youtube-main` (not git). It is synced from `main` with `git archive HEAD | tar -x -C <folder>`; files deleted in the repo must be removed there by hand.
 - Everything studio-owned (settings, credentials, skills, caches, tools, `.venv`, projects) lives beside each folder's `.cmd` launchers. Both folders are complete studios with their own `.env`, `.venv`, `.cache` and `work/`. Legacy `C:/Users/Joao/2D-Animation-Studio` is a backup only.
 - The user launches the GUI themself, on 2026-11-11 from the source checkout (its `studio.log` showed the run). Do not launch it for them; hidden smoke runs that do not save settings are fine.
@@ -39,7 +39,7 @@
 - All generated content is English. Edge voice default `en-US-AndrewMultilingualNeural`.
 - Canvas + three.js in Chrome/Edge + FFmpeg, not Remotion. Video frames are JPEG; inspected stills/sheets stay PNG. Encoder probe: NVENC → QSV → AMF → CPU.
 - Codex always stays sandboxed; the Full auto checkbox applies to Claude and Gemini only.
-- License (user request 2026-11-11): GPL version 3, `LICENSE` at the root, for the studio's own code. The GrowKaz plugin and the niche-prompt PDF are third-party and are excluded in the README; whether they may be kept in the repo at all is the user's call.
+- License (user request 2026-11-11): GPL version 3, `LICENSE` at the root, for the studio's own code. The GrowKaz plugin and the niche-prompt PDF are third-party: they were untracked and gitignored on 2026-11-11 (user request) but stay on disk in both folders, where the installer and `install_local_skills` still need the plugin. They are still in the public git history; purging that needs a history rewrite and force-push, only on the user's explicit say-so. `app/skills/scriptforge/SKILL.md` is derived from that PDF and is still tracked.
 - Workflow the user follows: each change goes on a branch and a PR; merge and sync the active folder only after they say so.
 
 ## 4. Failed approaches — do not repeat
@@ -62,8 +62,8 @@
 - `app/portable_paths.py`, `app/language_policy.py`: local paths/migration, English-only policy and the voice-engine default (both tested).
 - `app/patch_kit.py`, `app/video_encoder.mjs`: idempotent kit patches and encoder selection.
 - `Install-2D-Studio.cmd`: 8 steps; creates a `.env` template, installs `piper-tts`, pre-downloads the Whisper `small` model and the Piper voice, and offers Ollama + `gpt-oss:20b` (two Y/N prompts that default to N after 30 s). `Launch-2D-Studio.cmd` starts the GUI.
-- `plugin/GrowKaz_Stickman.plugin` holds the original kit and skills.
-- Local-only, gitignored: `.env`, `settings.json`, `youtube/`, `work/`, `growkaz-stickman-studio/`, `.claude/`, `.codex/`, `.runtime/`, `.cache/`, `.tools/`, `.venv/`.
+- `plugin/GrowKaz_Stickman.plugin` (local only, gitignored) holds the original kit and skills; the installer also looks in Downloads and stops with a clear message when it is missing.
+- Local-only, gitignored: `plugin/`, the niche-prompt PDF, `.env`, `settings.json`, `youtube/`, `work/`, `growkaz-stickman-studio/`, `.claude/`, `.codex/`, `.runtime/`, `.cache/`, `.tools/`, `.venv/`.
 
 ## 6. Next steps
 1. Wait for the user's next request; nothing is in progress.
