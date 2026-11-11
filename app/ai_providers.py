@@ -20,7 +20,8 @@ GEMINI_API_TIMEOUT = 600  # long scripts take minutes to generate
 
 
 def load_env_file(path, env):
-    """Add KEY=VALUE lines from a .env file to env. Values already set in env win."""
+    """Add KEY=VALUE lines from the studio's .env file to env. The file wins over values
+    inherited from Windows, so a stale user variable cannot break the studio."""
     try:
         lines = Path(path).read_text(encoding="utf-8-sig").splitlines()
     except OSError:
@@ -28,8 +29,17 @@ def load_env_file(path, env):
     for line in lines:
         key, sep, value = line.strip().partition("=")
         key = key.removeprefix("export ").strip()
-        if sep and key and not key.startswith("#") and not env.get(key):
-            env[key] = value.strip().strip("\"'")
+        value = value.strip().strip("\"'")
+        if sep and key and not key.startswith("#") and value:
+            env[key] = value
+    return drop_bad_model(env)
+
+
+def drop_bad_model(env):
+    """Remove a GEMINI_MODEL that cannot be a model name (e.g. a pasted "<placeholder>"):
+    the Gemini CLI reads this variable itself and fails every request with HTTP 400."""
+    if "GEMINI_MODEL" in env and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", env["GEMINI_MODEL"]):
+        del env["GEMINI_MODEL"]
     return env
 
 
