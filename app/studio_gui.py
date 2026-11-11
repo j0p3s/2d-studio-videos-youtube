@@ -1339,6 +1339,7 @@ class Studio(ctk.CTk):
         files = [cache / (hashlib.sha256((voice + "\n" + rate_s + "\n" + p).encode()).hexdigest()[:24] + ".mp3")
                  for p in parts]
         state = {"done": sum(1 for f in files if f.exists() and f.stat().st_size > 0), "retries": 0}
+        failed = {}
 
         def report():
             extra = f" · {state['retries']} retried" if state["retries"] else ""
@@ -1354,7 +1355,8 @@ class Studio(ctk.CTk):
                     self.check_cancel()
                     partial = mp3.with_name(mp3.stem + ".partial.mp3")
                     try:
-                        await asyncio.wait_for(edge_tts.Communicate(parts[i], voice=voice, rate=rate_s)
+                        await asyncio.wait_for(edge_tts.Communicate(parts[i], voice=voice, rate=rate_s,
+                                                                  receive_timeout=30)
                                                .save(str(partial)), timeout=180)
                         if not partial.is_file() or partial.stat().st_size == 0:
                             raise RuntimeError("no speech received")
@@ -1365,12 +1367,13 @@ class Studio(ctk.CTk):
                         if self._cancel:
                             raise RuntimeError("Stopped.")
                         if attempt == 2:
-                            raise RuntimeError(f"The voice service failed on passage {i + 1} of {n} after 3 tries "
-                                               f"({exc}).\n\nPassage starts: “{parts[i][:140]}…”\n\nCheck your internet "
-                                               "and try again — finished passages are cached, so it continues where it stopped.")
+                            failed[i] = exc
+                            return  # Let the other passages finish before serial recovery.
                         state["retries"] += 1
                         report()
                         await asyncio.sleep(attempt + 1)
+                    finally:
+                        partial.unlink(missing_ok=True)
             state["done"] += 1
             report()
 
@@ -1382,7 +1385,51 @@ class Studio(ctk.CTk):
             except BaseException:
                 for t in tasks:
                     t.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
                 raise
+            for i in failed:
+                self.check_cancel()
+                self.prog(state["done"] / n * 0.95,
+                          f"recovering voice passage {i + 1}/{n} in smaller pieces, one at a time")
+                recovered = []
+                for piece in self._speech_chunks(parts[i], limit=450):
+                    key = hashlib.sha256((voice + "\n" + rate_s + "\n" + piece).encode()).hexdigest()[:24]
+                    dest = cache / (key + ".mp3")
+                    recovered.append(dest)
+                    if dest.exists() and dest.stat().st_size:
+                        continue
+                    partial = dest.with_name(dest.stem + ".partial.mp3")
+                    for attempt in range(3):
+                        self.check_cancel()
+                        try:
+                            await asyncio.wait_for(edge_tts.Communicate(piece, voice=voice, rate=rate_s,
+                                                                      receive_timeout=30)
+                                                   .save(str(partial)), timeout=90)
+                            if not partial.is_file() or not partial.stat().st_size:
+                                raise RuntimeError("no speech received")
+                            os.replace(partial, dest)
+                            break
+                        except Exception as exc:
+                            partial.unlink(missing_ok=True)
+                            self.check_cancel()
+                            if attempt == 2:
+                                raise RuntimeError(
+                                    f"Microsoft returned no usable speech for passage {i + 1}/{n}, even after "
+                                    f"retrying smaller pieces one at a time ({exc}).\n\n"
+                                    "This can be a temporary voice-service failure. Wait a few minutes, then "
+                                    "press Auto again. Completed passages and recovery pieces are cached.") from exc
+                            state["retries"] += 1
+                            await asyncio.sleep(3 * (attempt + 1))
+                        finally:
+                            partial.unlink(missing_ok=True)
+                assembled = files[i].with_name(files[i].stem + ".partial.mp3")
+                try:
+                    self._join_mp3(recovered, assembled)
+                    os.replace(assembled, files[i])
+                finally:
+                    assembled.unlink(missing_ok=True)
+                state["done"] += 1
+                report()
         report()
         asyncio.run(run_all())
         self.prog(0.97, "joining passages")
