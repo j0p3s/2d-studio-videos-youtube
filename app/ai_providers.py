@@ -41,6 +41,7 @@ def cli_command(provider, env=None):
 def agent_command(provider, *, animation=False, full_auto=False, model="", env=None, workspace=None):
     cmd = list(cli_command(provider, env))
     if provider == "OpenAI (Codex)":
+        full_auto = False  # The app owns rendering; Codex always keeps its filesystem sandbox.
         if animation and not full_auto:
             # Rendering serves frames over localhost; timestamps may download a Whisper model.
             cmd += ["-c", "sandbox_workspace_write.network_access=true"]
@@ -60,11 +61,6 @@ def agent_command(provider, *, animation=False, full_auto=False, model="", env=N
                     cmd += ["-c", 'windows.sandbox="unelevated"']
         cmd += ["exec", "--json", "--skip-git-repo-check", "--color", "never",
                 "--sandbox", "workspace-write" if animation else "read-only"]
-        if animation and full_auto:
-            cmd += ["--dangerously-bypass-approvals-and-sandbox"]
-            # The bypass flag supplies the sandbox policy itself.
-            i = cmd.index("--sandbox")
-            del cmd[i:i + 2]
         if model:
             cmd += ["--model", model]
         cmd += ["-"]
