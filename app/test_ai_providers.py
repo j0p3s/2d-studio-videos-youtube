@@ -162,8 +162,17 @@ class ProviderTests(unittest.TestCase):
             f = Path(folder) / '.env'
             f.write_text('# keys\nGEMINI_API_KEY="from-file"\n\nGEMINI_MODEL=file-model\n', encoding='utf-8')
             env = load_env_file(f, {'GEMINI_MODEL': 'already-set'})
-            self.assertEqual(env, {'GEMINI_MODEL': 'already-set', 'GEMINI_API_KEY': 'from-file'})
+            self.assertEqual(env, {'GEMINI_MODEL': 'file-model', 'GEMINI_API_KEY': 'from-file'})
             self.assertEqual(load_env_file(Path(folder) / 'missing', {}), {})
+
+    def test_env_file_drops_inherited_model_that_is_not_a_model_name(self):
+        with tempfile.TemporaryDirectory() as folder:
+            f = Path(folder) / '.env'
+            f.write_text('GEMINI_API_KEY=k\nGEMINI_MODEL=\n', encoding='utf-8')
+            env = load_env_file(f, {'GEMINI_MODEL': '<model-that-succeeded>'})
+            self.assertEqual(env, {'GEMINI_API_KEY': 'k'})
+            self.assertEqual(load_env_file(Path(folder) / 'missing', {'GEMINI_MODEL': 'gemini-3.5-flash'}),
+                             {'GEMINI_MODEL': 'gemini-3.5-flash'})
 
 
 if __name__ == '__main__':
