@@ -20,6 +20,8 @@
 - Android prototype in `Adnroid-App/` (spelling intentional): separate native renderer, not a GrowKaz port.
 
 ## 3. Key decisions and reasons
+- Offline mode (2026-11-11): provider "Ollama (offline)" plus a Setup switch "Always work offline" that overrides both provider menus, voices with the built-in Windows voice (robotic; Edge needs internet), sets `HF_HUB_OFFLINE` for Whisper and blocks Upload. Ollama is a system app like Git/Node, not studio-owned: its models live in the real user profile, so the server is started with the real environment, not the studio's.
+- Offline animation runs the Claude Code CLI against Ollama's Anthropic-compatible endpoint (`claude_env` in `app/ollama_provider.py`), so the same skill and tools are used and no Claude login is needed. The model is copied once with a 64k context (`agent_model`), because Ollama's default window is too small and that endpoint cannot set it per request.
 - Gemini API is an **additional** provider, not a replacement. A rewrite that replaced `ai_providers.py` broke the GUI calls, the provider menu, Codex and the tests, so the CLI providers were restored.
 - Animation with Gemini API goes through the Gemini CLI, because a plain API call cannot write files or run the render kit.
 - Gemini API animation runs the CLI with its own config folder (`.runtime/home/gemini-api-key`, see `gemini_key_home` in `app/ai_providers.py`) that selects key sign-in. The CLI's normal folder keeps a Google login once chosen and ignores the key; Google now rejects that login (`IneligibleTierError`, "migrate to Antigravity"), so the plain "Gemini" provider no longer works for this account. A `GEMINI_CLI_SYSTEM_SETTINGS_PATH` override was tried first and the CLI skips it ("parent directory is insecure").
@@ -45,6 +47,8 @@
 - `app/studio_gui.py`: UI and pipeline. `.env` load at line 109, `ask_ai` ~442, provider menu ~724 (search names; lines drift).
 - `app/ai_providers.py`: providers. `load_env_file` 22, `gemini_api_text` 45, `run_agent` 208. Tests: `app/test_ai_providers.py`.
 - `app/session_log.py`: the session log (tested). The GUI logs jobs, child-process output, dialogs and tracebacks through it.
+- `app/ollama_provider.py`: local AI (server start, model check, streamed text, model download, Claude-CLI environment). `app/offline_voice.py`: Windows voice to MP3. Tests in `app/test_ollama_provider.py` use a fake Ollama server.
+- `Install-2D-Studio.cmd`: now 8 steps; creates a `.env` template, pre-downloads the Whisper `small` model, and offers Ollama + `gpt-oss:20b` (two Y/N prompts that default to N after 30 s, so unattended runs skip them).
 - `app/host_render.py`: host rendering, visual QC checkpoints, final validation (has tests).
 - `app/portable_paths.py`, `app/language_policy.py`: local paths/migration and English-only policy (both tested).
 - `app/patch_kit.py`, `app/video_encoder.mjs`: idempotent kit patches and encoder selection.
@@ -59,6 +63,8 @@
 5. After code changes run `.venv/Scripts/python.exe -m unittest discover -s app -p "test_*.py"` and `node --test app/video_encoder.test.mjs`.
 
 ## 7. Open questions / gotchas
+- Offline animation is NOT proven. Verified live: Ollama text through the GUI, Windows voice, Whisper loading offline, and the Claude CLI reaching Ollama. With the only chat model on this PC (`llama3.2`, 3B) the CLI got an answer but the model claimed it wrote a file without calling the tool. The default `gpt-oss:20b` (14 GB, fits the 16 GB GPU) is not downloaded yet; a full offline Animate run still has to be tried with it or a larger model.
+- The active folder has no Whisper model yet (each folder has its own `.cache`); re-run its installer or make one video online first.
 - The Windows user variables `GEMINI_MODEL` (placeholder text) and `GEMINI_API_KEY` still exist; the studio no longer depends on them, but the user may want to delete `GEMINI_MODEL`.
 - The recreated active folder has no `.tools` (the installer found Claude Code already on the machine); Codex and Gemini CLI may need installing from Setup. Why the old folder vanished is unknown.
 - Run the installer non-interactively by full path with stdin redirected; its last `choice` prompt then errors harmlessly.
