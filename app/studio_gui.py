@@ -19,6 +19,9 @@ import webbrowser
 from ai_providers import PROVIDERS, cli_command, run_agent, portable_prompt, load_env_file
 from host_render import HostAnimation
 import session_log
+import offline_voice
+import ollama_provider
+from ollama_provider import OLLAMA
 from language_policy import (ENGLISH_VOICES, english_voice, english_prompt, narration_hash,
                              normalize_narration_prompt, migrate_speech_settings, verify_english_recording)
 from datetime import datetime, timezone
@@ -236,6 +239,8 @@ class Studio(ctk.CTk):
         self._build_statusbar()
         self.show("setup" if not self.s else "script")
         self.after(100, self._pump)
+        self.apply_offline()
+        self._refresh_offline_badge()
         self.after(300, self.check_setup)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -273,6 +278,8 @@ class Studio(ctk.CTk):
                       command=lambda: open_path(HOME)).pack(fill="x", padx=18, pady=4)
         ctk.CTkButton(sb, text="📜 Show logs", height=34, fg_color="#1d222b", hover_color="#272d38",
                       command=self.show_logs).pack(fill="x", padx=18, pady=4)
+        self.lbl_offline = ctk.CTkLabel(sb, text="", text_color="#f59e0b", font=ctk.CTkFont(size=13, weight="bold"))
+        self.lbl_offline.pack(fill="x", padx=18, pady=(2, 0))
         self._refresh_current()
 
     def _build_statusbar(self):
@@ -528,7 +535,8 @@ class Studio(ctk.CTk):
     def run_cmd(self, cmd, cwd=None, stdin_text=None, on_line=None):
         session_log.write("RUN", f"{subprocess.list2cmdline([str(c) for c in cmd])[:600]}  (in {cwd or os.getcwd()})")
         self.proc = subprocess.Popen(
-            cmd, cwd=cwd, env=ENV, stdin=subprocess.PIPE if stdin_text is not None else subprocess.DEVNULL,
+            cmd, cwd=cwd, env=getattr(self, "_child_env", None) or ENV,
+            stdin=subprocess.PIPE if stdin_text is not None else subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
             creationflags=NO_WINDOW)
         if stdin_text is not None:
@@ -547,6 +555,12 @@ class Studio(ctk.CTk):
         stage = "animation" if tools else "script"
         ai = getattr(self, "_job_ai", self.settings)
         provider = ai.get(stage + "_provider", "Claude")
+        if self.settings.get("offline") or provider == OLLAMA:
+            # the stage's Model box only counts when Ollama was chosen for that stage
+            model = (ai.get(stage + "_model", "") if provider == OLLAMA else "") or ai.get("ollama_model", "")
+            session_log.write("STEP", f"Asking {OLLAMA} ({stage}, model {model or ollama_provider.DEFAULT_MODEL}, "
+                                      f"prompt {len(prompt)} characters)")
+            return self.ask_ollama(prompt, model, box, tools, full_auto, cwd, expect_chars, on_tool)
         session_log.write("STEP", f"Asking {provider} ({stage}, model {ai.get(stage + '_model') or 'default'}, "
                                   f"prompt {len(prompt)} characters)")
         if provider == "Claude":
@@ -572,6 +586,52 @@ class Studio(ctk.CTk):
                          model=ai.get(stage + "_model", ""),
                          skill_dir=SKILLS_DIR / "make-2d-video", on_event=event)
 
+    def offline(self):
+        """True when "Always work offline" is on: local AI, Windows voice, no uploads."""
+        return bool(self.settings.get("offline"))
+
+    def apply_offline(self):
+        """Keep child tools off the network too (Whisper then uses its downloaded model)."""
+        for key in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"):
+            if self.offline():
+                ENV[key] = "1"
+            else:
+                ENV.pop(key, None)
+
+    def ask_ollama(self, prompt, model, box=None, tools=None, full_auto=False, cwd=None, expect_chars=None, on_tool=None):
+        """Local model through Ollama. Text is one streamed request; animation runs the Claude Code CLI
+        against the local Ollama server, so the same skill and tools are used with no internet."""
+        self.prog(0.02, "starting Ollama (a local model can take minutes to answer)")
+        if not tools:
+            written = 0
+
+            def piece(kind, value):
+                nonlocal written
+                self.check_cancel()
+                written += len(value)
+                self.prog(min(0.97, 0.06 + 0.91 * written / expect_chars) if expect_chars else None,
+                          f"writing… {written // 6:,} words")
+            answer = run_agent(OLLAMA, prompt, self.run_cmd, cwd=cwd or HOME, env=ENV, model=model,
+                               skill_dir=SKILLS_DIR / "make-2d-video", on_event=piece)
+            if box is not None:
+                self.log(box, answer)
+            return answer
+        if not claude_exe():
+            raise RuntimeError("Offline animation runs the Claude Code CLI against Ollama, and the CLI was not "
+                               "found. Go to Setup and re-run the installer (no Claude login is needed).")
+        local = ollama_provider.agent_model(model, ENV)
+        self._child_env, self._claude_model = ollama_provider.claude_env(ENV, local), local
+        try:
+            return self.ask_claude(prompt, box, tools, full_auto, cwd, expect_chars, on_tool)
+        except RuntimeError as exc:
+            if str(exc) == "Stopped.":
+                raise
+            raise RuntimeError(f"Ollama ({local}) could not finish this step: {exc}\n\nLocal models are much weaker "
+                               "than the online ones. A larger model (offline model box in Setup) may be "
+                               "needed.") from exc
+        finally:
+            self._child_env = self._claude_model = None
+
     def ask_claude(self, prompt, box=None, tools=None, full_auto=False, cwd=None, expect_chars=None, on_tool=None):
         """Run `claude -p` headless, stream progress into box, return the final result text.
         expect_chars: roughly how long the answer is, so the bar can follow the text as it is written.
@@ -581,7 +641,7 @@ class Studio(ctk.CTk):
             raise RuntimeError("Claude Code CLI not found. Go to Setup and install / log in.")
         cmd = [exe, "-p", "--output-format", "stream-json", "--verbose"]
         stage = "animation" if tools else "script"
-        model = getattr(self, "_job_ai", self.settings).get(stage + "_model", "")
+        model = getattr(self, "_claude_model", None) or getattr(self, "_job_ai", self.settings).get(stage + "_model", "")
         if model:
             cmd += ["--model", model]
         if expect_chars:
@@ -845,6 +905,25 @@ class Studio(ctk.CTk):
                 save_settings(self.settings)
             model.bind("<FocusOut>", save_model)
             model.bind("<Return>", save_model)
+        row_off = ctk.CTkFrame(ai, fg_color="transparent")
+        row_off.pack(fill="x", padx=12, pady=5)
+        self.sw_offline = ctk.CTkSwitch(row_off, text="Always work offline (Ollama + Windows voice, no upload)",
+                                        command=self._toggle_offline)
+        if self.offline():
+            self.sw_offline.select()
+        self.sw_offline.pack(side="left")
+        self.ent_ollama = ctk.CTkEntry(row_off, width=220,
+                                       placeholder_text=f"Offline model ({ollama_provider.DEFAULT_MODEL})")
+        self.ent_ollama.insert(0, self.settings.get("ollama_model", ""))
+        self.ent_ollama.pack(side="left", padx=12)
+
+        def save_ollama(event=None):
+            self.settings["ollama_model"] = self.ent_ollama.get().strip()
+            save_settings(self.settings)
+        self.ent_ollama.bind("<FocusOut>", save_ollama)
+        self.ent_ollama.bind("<Return>", save_ollama)
+        ctk.CTkButton(row_off, text="Install Ollama", command=self.install_ollama).pack(side="left", padx=4)
+        ctk.CTkButton(row_off, text="Download offline model", command=self.download_ollama_model).pack(side="left", padx=4)
         buttons_ai = ctk.CTkFrame(ai, fg_color="transparent")
         buttons_ai.pack(fill="x", padx=12, pady=6)
         for provider in ("OpenAI (Codex)", "Gemini"):
@@ -861,6 +940,67 @@ class Studio(ctk.CTk):
             ctk.CTkButton(row, text=txt, height=38, command=cmd).pack(side="left", padx=(0, 8))
         self.setup_log = self.logbox(p, 300)
         self.setup_log.pack(fill="both", expand=True, pady=(8, 0))
+
+    def _toggle_offline(self):
+        self.settings["offline"] = bool(self.sw_offline.get())
+        save_settings(self.settings)
+        self.apply_offline()
+        session_log.write("INFO", f"Always work offline: {'on' if self.offline() else 'off'}")
+        self._refresh_offline_badge()
+
+    def _refresh_offline_badge(self):
+        if hasattr(self, "lbl_offline"):
+            self.lbl_offline.configure(text="✈ Offline mode" if self.offline() else "")
+
+    def install_ollama(self):
+        if ollama_provider.executable():
+            messagebox.showinfo("Ollama", "Ollama is already installed.")
+            return
+
+        def work():
+            self.log(self.setup_log, "> winget install Ollama.Ollama   (about 1 GB, needs internet)")
+            rc = self.run_cmd(["winget", "install", "--id", "Ollama.Ollama", "-e", "--silent",
+                               "--accept-package-agreements", "--accept-source-agreements"],
+                              on_line=lambda line: line.strip() and self.log(self.setup_log, line))
+            if not ollama_provider.executable():
+                raise RuntimeError(f"Ollama was not installed (winget exit {rc}). Install it from ollama.com instead.")
+        self.run_job("Installing Ollama", work, lambda _: self.check_setup(), indeterminate=True)
+
+    def download_ollama_model(self):
+        model = self.ent_ollama.get().strip() or ENV.get("OLLAMA_MODEL") or ollama_provider.DEFAULT_MODEL
+        if not messagebox.askyesno("Download offline model", f"Download the Ollama model \"{model}\"?\n\n"
+                                   "Models are large (the default is about 14 GB) and this needs internet. "
+                                   "After that it works with no connection."):
+            return
+
+        def work():
+            ollama_provider.ensure_running(ENV)
+            self.log(self.setup_log, f"> ollama pull {model}")
+
+            def progress(fraction, status):
+                self.check_cancel()
+                self.prog(fraction, f"{model}: {status}")
+            ollama_provider.pull(model, ENV, progress)
+            self.log(self.setup_log, f"{model} is ready for offline use.")
+        self.run_job(f"Downloading {model}", work, lambda _: self.check_setup())
+
+    def _offline_status(self):
+        """Setup rows for the pieces offline work needs."""
+        model = self.settings.get("ollama_model") or ENV.get("OLLAMA_MODEL") or ollama_provider.DEFAULT_MODEL
+        if not ollama_provider.executable():
+            ollama = None
+        else:
+            try:
+                names = ollama_provider.models(ENV) if ollama_provider.is_running(ENV) else None
+            except Exception:
+                names = None
+            ollama = ("installed (not running)" if names is None else
+                      f"{model} ready" if ollama_provider._installed(model, names) else None)
+        whisper = any((Path(ENV.get("HF_HOME", "")) / "hub").glob("models--Systran--faster-whisper-*/snapshots/*/model.bin"))
+        voices = offline_voice.voices()
+        return [("Ollama + offline model (optional)", ollama),
+                ("Whisper model (offline timestamps)", "downloaded" if whisper else None),
+                ("Windows voice (offline)", voices[0][0] if voices else None)]
 
     def check_setup(self):
         n_checks = {"i": 0}
@@ -899,6 +1039,7 @@ class Studio(ctk.CTk):
                     items.append((label, "installed"))
                 except Exception:
                     items.append((label, None))
+            items += self._offline_status()
             items.append(("YouTube connected", "yes" if (YT_DIR / "token.json").exists() else
                           ("client_secret.json added" if (YT_DIR / "client_secret.json").exists() else None)))
             return items
@@ -1598,6 +1739,10 @@ class Studio(ctk.CTk):
             self.check_cancel()
             (d / "script.txt").write_text(narration + "\n", encoding="utf-8")
             (d / "voiceover.srt").unlink(missing_ok=True)   # leftover from the old single-request method
+            if self.settings.get("offline"):
+                self.prog(None, "speaking with the Windows voice (offline)")
+                return offline_voice.speak(narration, out, rate=rate, voice=self.settings.get("offline_voice", ""),
+                                           env=ENV), narration
             return self._make_voice_edge(narration, d, out, voice, rate), narration
 
         def done(o):
@@ -1605,7 +1750,8 @@ class Studio(ctk.CTk):
             self.s.pop("video", None)
             self.s.pop("thumb", None)
             self.s.update({"voice": str(audio), "lang": "en", "narration": narration,
-                           "narration_en_hash": narration_hash(narration), "speech_engine": "microsoft-neural"})
+                           "narration_en_hash": narration_hash(narration),
+                           "speech_engine": "windows-offline" if self.settings.get("offline") else "microsoft-neural"})
             self.txt_narr.delete("1.0", "end")
             self.txt_narr.insert("1.0", narration)
             self.save_state()
@@ -2331,6 +2477,10 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
         return build("youtube", "v3", credentials=creds, cache_discovery=False)
 
     def upload(self):
+        if self.offline():
+            messagebox.showinfo("Upload", "\"Always work offline\" is on, and uploading to YouTube needs internet.\n\n"
+                                "Switch it off in ⚙ Setup when you are back online; the video stays saved.")
+            return
         video = self.ent_video.get().strip()
         title = self.ent_title.get().strip()
         if not video or not Path(video).exists():
