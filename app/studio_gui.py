@@ -865,6 +865,8 @@ class Studio(ctk.CTk):
                 # Keep approval on this command, rather than changing the user's npm config.
                 cmd.append("--allow-scripts=@github/keytar")
                 self.log(self.setup_log, "Allowing Gemini's @github/keytar install script for this installation.")
+            else:
+                cmd.append("--allow-scripts=@openai/codex")
             cmd.append(package)
             rc = self.run_cmd(cmd,
                               on_line=lambda line: self.log(self.setup_log, line))
