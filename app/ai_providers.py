@@ -215,6 +215,21 @@ class EventStream:
         return out
 
 
+GEMINI_KEY_HOME = "gemini-api-key"
+
+
+def gemini_key_home(env):
+    """A separate Gemini CLI config folder that signs in with GEMINI_API_KEY. The CLI's normal
+    folder may hold a Google login chosen earlier, which it keeps using even when a key is set and
+    which Google now rejects (IneligibleTierError). That folder is left untouched."""
+    base = Path(env.get("GEMINI_CLI_HOME") or Path.home())
+    home = base if base.name == GEMINI_KEY_HOME else base / GEMINI_KEY_HOME
+    (home / ".gemini").mkdir(parents=True, exist_ok=True)
+    (home / ".gemini" / "settings.json").write_text(
+        json.dumps({"security": {"auth": {"selectedType": "gemini-api-key"}}}), encoding="utf-8")
+    return home
+
+
 def run_agent(provider, prompt, run_cmd, *, cwd, env=None, animation=False,
               full_auto=False, model="", skill_dir=None, on_event=None):
     if animation and (not skill_dir or not (Path(skill_dir) / 'SKILL.md').is_file()):
@@ -231,6 +246,9 @@ def run_agent(provider, prompt, run_cmd, *, cwd, env=None, animation=False,
         # call cannot do. The Gemini CLI does it, signed in with the same API key.
         gemini_api_key(env)
         model = model or env.get("GEMINI_MODEL", "")
+        env["GEMINI_CLI_HOME"] = str(gemini_key_home(env))
+    elif provider == "Gemini" and env is not None and Path(env.get("GEMINI_CLI_HOME", "")).name == GEMINI_KEY_HOME:
+        env["GEMINI_CLI_HOME"] = str(Path(env["GEMINI_CLI_HOME"]).parent)   # back to the Google login
     stream = EventStream(provider)
     diagnostics = []
     def receive(line):
@@ -244,6 +262,9 @@ def run_agent(provider, prompt, run_cmd, *, cwd, env=None, animation=False,
     rc = run_cmd(cmd, cwd=str(cwd), stdin_text=portable_prompt(prompt, skill_dir, animation), on_line=receive)
     if rc or stream.error:
         detail = stream.error or '\n'.join(diagnostics) or 'Check the log and CLI login.'
+        if 'IneligibleTierError' in detail:
+            detail = ('Google no longer accepts the Google-account login in the Gemini CLI. '
+                      'In Setup choose "Gemini API" instead (it uses the key in .env).\n' + detail)
         raise RuntimeError(f"{provider} failed (exit {rc}): {detail}")
     if not stream.text.strip():
         raise RuntimeError(f"{provider} returned no response. Check authentication and the selected model.")
