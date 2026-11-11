@@ -10,7 +10,10 @@ rem  Installs: Git, Node.js LTS, Python 3.12, FFmpeg, Claude Code CLI,
 rem            GrowKaz Stickman Studio (three.js + Playwright Chromium),
 rem            Python libs (numpy, scipy, faster-whisper, edge-tts, YouTube API,
 rem            customtkinter, pillow), the plugin skills + ScriptForge skill,
+rem            the Whisper speech model (so timestamps work with no internet),
 rem            all studio settings beside this installer.
+rem  Optional: offline mode - Ollama and a local AI model (about 15 GB).
+rem            Codex and the Gemini CLI are installed from the GUI Setup page.
 rem  Safe to run again: it skips what is already installed and never touches
 rem  your projects\ folder.
 rem ==========================================================================
@@ -38,7 +41,8 @@ echo   Install folder : %HOME2D%
 echo   Local skills  : %SKILLS%
 echo.
 echo   This will install (if missing): Git, Node.js, Python, FFmpeg,
-echo   Claude Code, Chromium (headless), and about 1 GB of tools.
+echo   Claude Code, Chromium (headless), and about 1.5 GB of tools.
+echo   It then offers the optional offline mode (Ollama, about 15 GB).
 echo.
 pause
 
@@ -56,12 +60,12 @@ if errorlevel 1 (
 )
 
 rem ---------- 1. System tools -------------------------------------------------
-call :banner "1/7  System tools (Git, Node.js, FFmpeg)"
+call :banner "1/8  System tools (Git, Node.js, FFmpeg)"
 call :ensure git    Git.Git
 call :ensure node   OpenJS.NodeJS.LTS
 call :ensure ffmpeg Gyan.FFmpeg
 
-call :banner "2/7  Python 3.12"
+call :banner "2/8  Python 3.12"
 set "PY="
 call :findpy
 if not defined PY (
@@ -78,7 +82,7 @@ if not defined PY (
 echo   [ok] Python: %PY%
 
 rem ---------- 3. Claude Code --------------------------------------------------
-call :banner "3/7  Claude Code CLI"
+call :banner "3/8  Claude Code CLI"
 call :findclaude
 if not defined CLAUDE_OK (
   echo   installing Claude Code into the local .tools folder ...
@@ -87,9 +91,17 @@ if not defined CLAUDE_OK (
 )
 if defined CLAUDE_OK (echo   [ok] Claude Code found) else (echo   [!] Claude Code not found - the GUI Setup page can retry this.)
 echo   [info] Codex and Gemini are optional alternatives: install and sign in from GUI Setup.
+echo   [info] Gemini API needs GEMINI_API_KEY in the .env file beside this installer.
+if not exist "%HOME2D%\.env" (
+  >"%HOME2D%\.env" echo # Keys and defaults for the studio. This file stays on this PC.
+  >>"%HOME2D%\.env" echo # GEMINI_API_KEY=
+  >>"%HOME2D%\.env" echo # GEMINI_MODEL=gemini-3.5-flash
+  >>"%HOME2D%\.env" echo # OLLAMA_MODEL=gpt-oss:20b
+  echo   [ok] created .env ^(add your keys there^)
+)
 
 rem ---------- 4. Copy app + plugin --------------------------------------------
-call :banner "4/7  App, GrowKaz Stickman plugin and ScriptForge skill"
+call :banner "4/8  App, GrowKaz Stickman plugin and ScriptForge skill"
 set "PLUG=%SRC%\plugin\GrowKaz_Stickman.plugin"
 if not exist "%PLUG%" set "PLUG=%USERPROFILE%\Downloads\GrowKaz_Stickman.plugin"
 if not exist "%PLUG%" (
@@ -127,7 +139,7 @@ echo   [ok] skills: make-2d-video, new-video, render-video, video-sound, video-s
 rmdir /s /q "%EXT%" 2>nul
 
 rem ---------- 5. Node packages + Chromium -------------------------------------
-call :banner "5/7  three.js, Playwright and headless Chromium"
+call :banner "5/8  three.js, Playwright and headless Chromium"
 pushd "%STUDIO%"
 call npm install --no-fund --no-audit
 echo.
@@ -136,15 +148,51 @@ rem Installed Chrome/Edge is preferred; no shared browser download.
 popd
 
 rem ---------- 6. Python packages ----------------------------------------------
-call :banner "6/7  Python packages"
+call :banner "6/8  Python packages"
 %PY% -m venv --system-site-packages "%HOME2D%\.venv"
 if errorlevel 1 exit /b 1
 set PY="%HOME2D%\.venv\Scripts\python.exe"
 %PY% -m pip install --upgrade numpy scipy faster-whisper edge-tts customtkinter pillow google-api-python-client google-auth-oauthlib google-auth-httplib2
 %PY% -c "import sys, pathlib; pathlib.Path(r'%HOME2D%\python.txt').write_text(r'.venv\Scripts\python.exe')"
+echo   downloading the Whisper speech model (about 500 MB, once) ...
+%PY% -c "from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8')"
+if errorlevel 1 (echo   [!] Whisper model not downloaded - it will download on the first video instead.) else (echo   [ok] Whisper model ready for offline use)
 
-rem ---------- 7. Check ---------------------------------------------
-call :banner "7/7  Checking everything"
+rem ---------- 7. Offline mode (optional) --------------------------------------
+call :banner "7/8  Offline mode (optional): Ollama + local AI model"
+set "OLLAMA_MODEL=gpt-oss:20b"
+call :findollama
+if defined OLLAMA_EXE (
+  echo   [ok] Ollama already installed
+) else (
+  echo   Offline mode lets the studio work with no internet and no AI credits.
+  echo   It needs Ollama ^(about 1 GB^) and a local model ^(%OLLAMA_MODEL%, about 14 GB^).
+  choice /c YN /t 30 /d N /m "Install Ollama now (N is chosen after 30 seconds)"
+  if errorlevel 2 goto :offline_done
+  winget install --id Ollama.Ollama -e --silent --accept-package-agreements --accept-source-agreements
+  call :refresh
+  call :findollama
+)
+if not defined OLLAMA_EXE (
+  echo   [!] Ollama not found - use "Install Ollama" on the GUI Setup page later.
+  goto :offline_done
+)
+"%OLLAMA_EXE%" show %OLLAMA_MODEL% >nul 2>&1
+if not errorlevel 1 (
+  echo   [ok] offline model %OLLAMA_MODEL% already downloaded
+  goto :offline_done
+)
+choice /c YN /t 30 /d N /m "Download the offline model %OLLAMA_MODEL% now, about 14 GB (N after 30 seconds)"
+if errorlevel 2 (
+  echo   [info] skipped - use "Download offline model" on the GUI Setup page later.
+  goto :offline_done
+)
+"%OLLAMA_EXE%" pull %OLLAMA_MODEL%
+if errorlevel 1 (echo   [!] model download failed - retry from the GUI Setup page.) else (echo   [ok] offline model ready)
+:offline_done
+
+rem ---------- 8. Check ---------------------------------------------
+call :banner "8/8  Checking everything"
 pushd "%STUDIO%"
 %PY% tools\verify_kit.py
 %PY% tools\doctor.py
@@ -157,6 +205,7 @@ echo.
 echo    First time only:
 echo     - Setup page ^> choose Claude, OpenAI Codex or Gemini and sign in.
 echo     - Upload page ^> "YouTube setup" to connect your channel.
+echo     - No internet or no AI credits left? Setup page ^> "Always work offline".
 echo  ===========================================================
 echo.
 choice /c YN /m "Open the studio now"
@@ -206,6 +255,12 @@ set "CLAUDE_OK="
 where claude >nul 2>&1
 if not errorlevel 1 set "CLAUDE_OK=1"
 if exist "%USERPROFILE%\.local\bin\claude.exe" set "CLAUDE_OK=1"
+exit /b 0
+
+:findollama
+set "OLLAMA_EXE="
+for /f "delims=" %%O in ('where ollama 2^>nul') do if not defined OLLAMA_EXE set "OLLAMA_EXE=%%O"
+if not defined OLLAMA_EXE if exist "%LOCALAPPDATA%\Programs\Ollama\ollama.exe" set "OLLAMA_EXE=%LOCALAPPDATA%\Programs\Ollama\ollama.exe"
 exit /b 0
 
 :refresh

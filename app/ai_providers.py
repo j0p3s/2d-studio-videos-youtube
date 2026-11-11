@@ -12,8 +12,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+import ollama_provider
+from ollama_provider import OLLAMA
+
 GEMINI_API = "Gemini API"
-PROVIDERS = ("Claude", "OpenAI (Codex)", "Gemini", GEMINI_API)
+PROVIDERS = ("Claude", "OpenAI (Codex)", "Gemini", GEMINI_API, OLLAMA)
 GEMINI_API_MODEL = "gemini-3.8-flash"
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 GEMINI_API_TIMEOUT = 600  # long scripts take minutes to generate
@@ -234,6 +237,11 @@ def run_agent(provider, prompt, run_cmd, *, cwd, env=None, animation=False,
               full_auto=False, model="", skill_dir=None, on_event=None):
     if animation and (not skill_dir or not (Path(skill_dir) / 'SKILL.md').is_file()):
         raise RuntimeError("GrowKaz skill missing. Re-run the studio installer from Setup.")
+    if provider == OLLAMA:
+        if animation:   # needs an agent: the studio runs the Claude Code CLI against Ollama instead
+            raise RuntimeError("Ollama animation is started by the studio, not by run_agent.")
+        return ollama_provider.text(portable_prompt(prompt, skill_dir, False), model=model, env=env,
+                                    on_text=(lambda piece: on_event("text", piece)) if on_event else None)
     if provider == GEMINI_API:
         env = os.environ if env is None else env
         if not animation:
