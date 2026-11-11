@@ -61,55 +61,73 @@ class HostAnimation:
     def execute(self, prompts, duration):
         checkpoint = self.project / 'build' / 'host_animation.json'
         identity = hashlib.sha256('\n'.join(prompts).encode()).hexdigest()
+        pending = None
         try:
             saved = json.loads(checkpoint.read_text(encoding='utf-8'))
-            completed = int(saved.get('completed', 0)) if (saved.get('identity') == identity and
-                                                          saved.get('fingerprint') == self.fingerprint()) else 0
+            matches = saved.get('identity') == identity and saved.get('fingerprint') == self.fingerprint()
+            completed = int(saved.get('completed', 0)) if matches else 0
+            pending = saved.get('pending') if matches else None
         except (OSError, ValueError, TypeError):
             completed = 0
         completed = max(0, min(completed, len(prompts)))
+        def save(completed, pending=None):
+            checkpoint.parent.mkdir(parents=True, exist_ok=True)
+            temporary = checkpoint.with_suffix('.tmp')
+            temporary.write_text(json.dumps({'identity': identity, 'completed': completed,
+                                             'pending': pending, 'fingerprint': self.fingerprint()}), encoding='utf-8')
+            temporary.replace(checkpoint)
         for index, prompt in enumerate(prompts):
             if index < completed:
                 continue
             self.check_cancel()
-            self.ask(prompt + '\n\nAPP-MANAGED RENDERING OVERRIDE:\n'
-                     'Keep the agent sandbox enabled. The desktop app runs Chrome, render.mjs, previews, '
-                     'FFmpeg mixing and final export after your response. Do not launch browsers or render '
-                     'commands, do not weaken sandbox permissions, and do not treat app-managed rendering '
-                     'as a blocker. Build/fix only the scene files for this pass and prepare the requested '
-                     'sound plan. Reuse existing bible, alignment, shot plan and completed scene modules; '
-                     'do not recreate the project or overwrite completed work. Contact sheets will be '
-                     'provided next by the app for your visual inspection. End with SCENES_READY.')
-            for attempt in range(3):
+            if pending != index:
+                self.ask(prompt + '\n\nAPP-MANAGED RENDERING OVERRIDE:\n'
+                         'Keep the agent sandbox enabled. The desktop app runs Chrome, render.mjs, previews, '
+                         'FFmpeg mixing and final export after your response. Do not launch browsers or render '
+                         'commands, do not weaken sandbox permissions, and do not treat app-managed rendering '
+                         'as a blocker. Build/fix only the scene files for this pass and prepare the requested '
+                         'sound plan. Reuse existing bible, alignment, shot plan and completed scene modules; '
+                         'do not recreate the project or overwrite completed work. Contact sheets will be '
+                         'provided next by the app for your visual inspection. End with SCENES_READY.')
+                save(index, index)
+            # Three repair rounds, then a separate verification of the last repair.
+            for attempt in range(4):
                 try:
                     sheets = self.contact_sheets(index, len(prompts), duration)
                 except RuntimeError as exc:
-                    if attempt == 2:
+                    if attempt == 3:
                         raise
                     self.ask(f'The app renderer reported this failure for {self.project}:\n{exc}\n'
                              'Fix the project scene code or assets. Do not edit the installed renderer, '
                              'launch Chrome, or change sandbox permissions. The app will render again.')
+                    save(index, index)
                     continue
+                before_review = self.fingerprint()
+                instructions = ('Fix scene code if needed; finish with QC_FIXED so the app renders again. '
+                                if attempt < 3 else
+                                'FINAL VERIFICATION: do not edit files in this check. If problems remain, '
+                                'describe them and finish with QC_PENDING. ')
                 response = self.ask(
                     f'Visual QC for project {self.project}, pass {index + 1}/{len(prompts)}. '
                     'The app rendered these real contact sheets outside your sandbox. Open and inspect '
                     'EVERY listed image with your image-reading tool:\n' + '\n'.join(map(str, sheets)) +
                     '\nCheck missing scenes, composition, legibility and style consistency. Do not run a '
-                    'browser, renderer or mixer. Fix scene code if needed; finish with QC_FIXED so the app '
-                    'renders again. If every image was inspected and all checks pass, finish on a line '
+                    'browser, renderer or mixer. ' + instructions +
+                    'If every image was inspected and all checks pass, finish on a line '
                     'containing only QC_OK. If image inspection is unavailable, report the limitation and '
                     'do not claim QC_OK. Do not use mock-canvas tests as visual approval.')
-                if re.search(r'^QC_OK\s*$', response.strip(), re.M):
+                changed = before_review != self.fingerprint()
+                save(index, index)
+                if re.search(r'^QC_OK\s*$', response.strip(), re.M) and not changed:
                     break
-                if not re.search(r'^QC_FIXED\s*$', response.strip(), re.M):
-                    raise RuntimeError('Visual inspection was not approved; scene files and sheets are saved.\n' + response[-1600:])
+                if not re.search(r'^QC_FIXED\s*$', response.strip(), re.M) and not changed:
+                    raise RuntimeError('Visual inspection was not approved; saved at visual QC. '
+                                       'Resume to check the saved scenes without rebuilding this pass.\n' + response[-1600:])
             else:
-                raise RuntimeError('Visual QC still needs fixes after three checks. Resume with the saved scenes.')
-            checkpoint.parent.mkdir(parents=True, exist_ok=True)
-            temporary = checkpoint.with_suffix('.tmp')
-            temporary.write_text(json.dumps({'identity': identity, 'completed': index + 1,
-                                             'fingerprint': self.fingerprint()}), encoding='utf-8')
-            temporary.replace(checkpoint)
+                raise RuntimeError('Visual QC still needs approval after the final verification. '
+                                   'Saved at visual QC; resume with the existing scenes.')
+            save(index + 1)
+            pending = None
         self.invoke(['node', 'render.mjs', '--project', str(self.project)], render=True)
         output = self.project / 'out' / 'final.mp4'
         self.invoke([str(self.python), 'audio/mix.py', '--project', str(self.project), '--out', str(output)])
