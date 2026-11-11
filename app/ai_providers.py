@@ -1,6 +1,7 @@
 """Local coding-agent adapters. Authentication stays in each vendor's CLI."""
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -11,13 +12,13 @@ def cli_command(provider, env=None):
     env = env or os.environ
     name = {"Claude": "claude", "OpenAI (Codex)": "codex", "Gemini": "gemini"}[provider]
     exe = shutil.which(name, path=env.get("PATH"))
+    if name == "codex" and exe and "/openai/codex/bin/" in str(exe).replace("\\", "/").lower():
+        raise RuntimeError("The selected executable belongs to Codex Desktop. Install the standalone CLI for the studio. "
+                           "Go to Setup → Install OpenAI (Codex), then sign in. "
+                           "The standalone CLI installs inside this studio's .tools folder.")
     if not exe and name == "claude":
         candidate = Path.home() / ".local/bin/claude.exe"
         exe = str(candidate) if candidate.exists() else None
-    if not exe and name == "codex":
-        candidates = sorted((Path(os.environ.get("LOCALAPPDATA", "")) / "OpenAI/Codex/bin").glob("*/codex.exe"),
-                            key=lambda p: p.stat().st_mtime, reverse=True)
-        exe = str(candidates[0]) if candidates else None
     if not exe:
         raise RuntimeError(f"{provider} CLI not found. Install it from Setup, then sign in.")
     # Execute npm's JS entry point directly: no cmd.exe quoting of prompts or paths.
@@ -37,9 +38,26 @@ def cli_command(provider, env=None):
     return [exe]
 
 
-def agent_command(provider, *, animation=False, full_auto=False, model="", env=None):
+def agent_command(provider, *, animation=False, full_auto=False, model="", env=None, workspace=None):
     cmd = list(cli_command(provider, env))
     if provider == "OpenAI (Codex)":
+        if animation and not full_auto:
+            # Rendering serves frames over localhost; timestamps may download a Whisper model.
+            cmd += ["-c", "sandbox_workspace_write.network_access=true"]
+        if os.name == "nt" and animation and not full_auto:
+            cmd += ["--no-daemon"]
+            # A portable, non-Git studio is otherwise treated as an untrusted read-only folder.
+            if workspace:
+                cmd += ["-c", "projects." + json.dumps(str(Path(workspace).resolve())) + '.trust_level="trusted"']
+            config = Path((env or os.environ).get("CODEX_HOME", str(Path.home() / '.codex'))) / 'config.toml'
+            if not config.exists():
+                cmd += ["-c", 'windows.sandbox="unelevated"']
+            else:
+                # Preserve existing elevated/MXC selections; supply a sandbox only when unset.
+                import tomllib
+                configured = tomllib.loads(config.read_text(encoding='utf-8'))
+                if not configured.get('windows', {}).get('sandbox'):
+                    cmd += ["-c", 'windows.sandbox="unelevated"']
         cmd += ["exec", "--json", "--skip-git-repo-check", "--color", "never",
                 "--sandbox", "workspace-write" if animation else "read-only"]
         if animation and full_auto:
@@ -126,11 +144,18 @@ def run_agent(provider, prompt, run_cmd, *, cwd, env=None, animation=False,
                 del diagnostics[:-5]
             if on_event:
                 on_event(kind, value)
-    cmd = agent_command(provider, animation=animation, full_auto=full_auto, model=model, env=env)
+    cmd = agent_command(provider, animation=animation, full_auto=full_auto, model=model, env=env, workspace=cwd)
     rc = run_cmd(cmd, cwd=str(cwd), stdin_text=portable_prompt(prompt, skill_dir, animation), on_line=receive)
     if rc or stream.error:
         detail = stream.error or '\n'.join(diagnostics) or 'Check the log and CLI login.'
         raise RuntimeError(f"{provider} failed (exit {rc}): {detail}")
     if not stream.text.strip():
         raise RuntimeError(f"{provider} returned no response. Check authentication and the selected model.")
+    if animation and re.search(r"\b(blocked by policy|read.only (?:filesystem|permissions|access)|"
+                               r"(?:pass|session|task).{0,35}(?:is blocked|blocked by)|"
+                               r"(?:could not|couldn.t|cannot).{0,50}(?:write|render|read the skill))\b",
+                               stream.text + '\n' + '\n'.join(diagnostics), re.I | re.S):
+        raise RuntimeError(f"{provider} could not complete this animation pass:\n{stream.text}\n\n"
+                           "Animation stopped before later passes. Check the standalone CLI installation "
+                           "and its workspace permissions in Setup.")
     return stream.text
