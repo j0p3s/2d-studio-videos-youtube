@@ -3,7 +3,9 @@ import unittest
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
-from ai_providers import EventStream, agent_command, run_agent, portable_prompt, cli_command
+import io
+import urllib.error
+from ai_providers import EventStream, agent_command, run_agent, portable_prompt, cli_command, load_env_file, gemini_api_text
 
 
 class ProviderTests(unittest.TestCase):
@@ -103,6 +105,65 @@ class ProviderTests(unittest.TestCase):
             return 41
         with self.assertRaisesRegex(RuntimeError, 'Auth method'):
             run_agent('Gemini', 'test', run, cwd='.')
+
+    @staticmethod
+    def _reply(body):
+        class Reply(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        return Reply(json.dumps(body).encode())
+
+    def test_gemini_api_writes_text_without_a_cli(self):
+        seen, events = {}, []
+        def opener(request, timeout):
+            seen.update(url=request.full_url, key=request.get_header('X-goog-api-key'),
+                        body=json.loads(request.data))
+            return self._reply({'candidates': [{'content': {'parts': [{'text': 'An idea'}]}}]})
+        with patch('ai_providers.urllib.request.urlopen', opener):
+            text = run_agent('Gemini API', 'give me ideas', None, cwd='.',
+                             env={'GEMINI_API_KEY': 'test-key', 'GEMINI_MODEL': 'model-x'},
+                             on_event=lambda *e: events.append(e))
+        self.assertEqual(text, 'An idea')
+        self.assertEqual(events, [('text', 'An idea')])
+        self.assertEqual(seen['key'], 'test-key')
+        self.assertNotIn('test-key', seen['url'])
+        self.assertIn('models/model-x:generateContent', seen['url'])
+        self.assertIn('give me ideas', seen['body']['contents'][0]['parts'][0]['text'])
+
+    def test_gemini_api_reports_missing_key_and_api_errors(self):
+        with self.assertRaisesRegex(RuntimeError, 'GEMINI_API_KEY'):
+            run_agent('Gemini API', 'test', None, cwd='.', env={})
+        def opener(request, timeout):
+            raise urllib.error.HTTPError(request.full_url, 404, 'Not Found', {},
+                                         io.BytesIO(b'{"error": {"message": "model not found"}}'))
+        with patch('ai_providers.urllib.request.urlopen', opener):
+            with self.assertRaisesRegex(RuntimeError, r'404.*model not found'):
+                gemini_api_text('test', env={'GEMINI_API_KEY': 'k'})
+
+    @patch('ai_providers.cli_command', return_value=['node', 'gemini.js'])
+    def test_gemini_api_animates_through_the_gemini_cli(self, _):
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / 'SKILL.md').write_text('skill', encoding='utf-8')
+            seen = {}
+            def run(cmd, **kw):
+                seen['cmd'] = cmd
+                kw['on_line'](json.dumps({'type': 'message', 'role': 'assistant', 'content': 'FINAL_VIDEO: a.mp4'}))
+                return 0
+            text = run_agent('Gemini API', 'animate', run, cwd=folder, animation=True, skill_dir=folder,
+                             env={'GEMINI_API_KEY': 'k', 'GEMINI_MODEL': 'model-x'})
+            self.assertEqual(text, 'FINAL_VIDEO: a.mp4')
+            self.assertEqual(seen['cmd'][:2], ['node', 'gemini.js'])
+            self.assertIn('model-x', seen['cmd'])
+            with self.assertRaisesRegex(RuntimeError, 'GEMINI_API_KEY'):
+                run_agent('Gemini API', 'animate', run, cwd=folder, animation=True, skill_dir=folder, env={})
+
+    def test_env_file_fills_only_missing_values(self):
+        with tempfile.TemporaryDirectory() as folder:
+            f = Path(folder) / '.env'
+            f.write_text('# keys\nGEMINI_API_KEY="from-file"\n\nGEMINI_MODEL=file-model\n', encoding='utf-8')
+            env = load_env_file(f, {'GEMINI_MODEL': 'already-set'})
+            self.assertEqual(env, {'GEMINI_MODEL': 'already-set', 'GEMINI_API_KEY': 'from-file'})
+            self.assertEqual(load_env_file(Path(folder) / 'missing', {}), {})
 
 
 if __name__ == '__main__':
