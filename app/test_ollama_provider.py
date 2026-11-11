@@ -9,8 +9,9 @@ from ai_providers import OLLAMA, PROVIDERS, run_agent
 
 
 class FakeOllama(BaseHTTPRequestHandler):
-    models = ["tiny:latest", "big:7b"]
+    models = ["tiny:latest", "big:7b", "thinker"]
     seen = []
+    thinker_calls, thinker_answers_on = 0, 2
 
     def log_message(self, *args):
         pass
@@ -32,7 +33,11 @@ class FakeOllama(BaseHTTPRequestHandler):
         payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         self.seen.append((self.path, payload))
         if self.path == "/api/chat":
-            if payload["model"] == "big:7b":
+            if payload["model"] == "thinker":
+                FakeOllama.thinker_calls += 1
+                answer = [{"message": {"content": "Done"}}] if FakeOllama.thinker_calls == FakeOllama.thinker_answers_on else []
+                self._send([{"message": {"thinking": "let me plan"}}] + answer + [{"done": True, "done_reason": "stop"}])
+            elif payload["model"] == "big:7b":
                 self._send([{"error": "out of memory"}], 500)
             else:
                 self._send([{"message": {"content": "<think>plan</think>Hello "}},
@@ -57,7 +62,8 @@ class OllamaTests(unittest.TestCase):
         cls.server.server_close()
 
     def setUp(self):
-        FakeOllama.models[:] = ["tiny:latest", "big:7b"]
+        FakeOllama.models[:] = ["tiny:latest", "big:7b", "thinker"]
+        FakeOllama.thinker_calls, FakeOllama.thinker_answers_on = 0, 2
         FakeOllama.seen.clear()
 
     def test_text_streams_pieces_and_drops_thinking(self):
@@ -80,6 +86,13 @@ class OllamaTests(unittest.TestCase):
         self.assertEqual(ollama.pick_model("", dict(self.env, OLLAMA_MODEL="big:7b")), "big:7b")
         with self.assertRaisesRegex(RuntimeError, "out of memory"):
             ollama.text("hi", model="big:7b", env=self.env)
+
+    def test_empty_answer_from_a_reasoning_model_is_asked_again(self):
+        self.assertEqual(ollama.text("hi", model="thinker", env=self.env), "Done")
+        self.assertEqual(FakeOllama.thinker_calls, 2)
+        FakeOllama.thinker_calls, FakeOllama.thinker_answers_on = 0, 99
+        with self.assertRaisesRegex(RuntimeError, "no text in 3 tries: it wrote 11 characters of reasoning"):
+            ollama.text("hi", model="thinker", env=self.env)
 
     def test_agent_model_is_created_once_with_a_large_context(self):
         name = ollama.agent_model("big:7b", self.env)
