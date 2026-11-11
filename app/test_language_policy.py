@@ -16,7 +16,10 @@ class EnglishPipelineTests(unittest.TestCase):
         self.assertNotIn('voice', result['current'])
         self.assertNotIn('video', result['current'])
         self.assertEqual(result['current']['script'], 'Começa pequeno.')
-        self.assertEqual(result['engine'], 'Free (Edge)')
+        self.assertEqual(result['engine'], 'Piper (offline)')
+        self.assertEqual(migrate_speech_settings({'engine': 'Free (Edge)'})['engine'], 'Piper (offline)')
+        chosen = migrate_speech_settings({'engine': 'Free (Edge)', 'piper_default': True})
+        self.assertEqual(chosen['engine'], 'Free (Edge)')
 
     def test_saved_portuguese_voice_is_replaced(self):
         self.assertEqual(english_voice('pt-PT-DuarteNeural'), 'en-US-AndrewMultilingualNeural')

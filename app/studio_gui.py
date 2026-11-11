@@ -1435,7 +1435,7 @@ class Studio(ctk.CTk):
                     "(offline). Imported recordings must also be in English.")
         eng = self.card(p)
         ctk.CTkLabel(eng, text="Voice engine").grid(row=0, column=0, padx=(16, 6), pady=12)
-        self.opt_engine = ctk.CTkSegmentedButton(eng, values=["Free (Edge)", piper_voice.ENGINE], command=self._on_engine)
+        self.opt_engine = ctk.CTkSegmentedButton(eng, values=[piper_voice.ENGINE, "Free (Edge)"], command=self._on_engine)
         self.opt_engine.grid(row=0, column=1, padx=(0, 16))
         self.el_frame = ctk.CTkFrame(eng, fg_color="transparent")
         ctk.CTkLabel(self.el_frame, text="API key").pack(side="left")
@@ -1479,7 +1479,7 @@ class Studio(ctk.CTk):
         ctk.CTkButton(bot, text="Next: Animate →", width=150, command=lambda: self.show("animate")).pack(side="right")
         ctk.CTkButton(bot, text="▶ Play", width=90, fg_color="#1d222b", hover_color="#272d38",
                       command=lambda: self.s.get("voice") and open_path(self.s["voice"])).pack(side="right", padx=8)
-        self.opt_engine.set(self.settings.get("engine", "Free (Edge)"))
+        self.opt_engine.set(self.settings.get("engine", piper_voice.ENGINE))
         self._on_engine(self.opt_engine.get())
 
     def _on_engine(self, v):
