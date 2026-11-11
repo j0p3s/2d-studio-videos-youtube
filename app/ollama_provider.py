@@ -17,6 +17,7 @@ from pathlib import Path
 OLLAMA = "Ollama (offline)"
 DEFAULT_MODEL = "gpt-oss:20b"     # fits a 16 GB GPU and can call tools; change it in Setup
 TEXT_CONTEXT = 16384              # tokens: enough for a full script prompt and its answer
+EMPTY_RETRIES = 2                 # extra tries when a model answers with no text
 AGENT_CONTEXT = 65536             # the animation agent's instructions alone are tens of thousands of tokens
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
@@ -123,24 +124,34 @@ def text(prompt, *, model="", env=None, on_text=None, context=TEXT_CONTEXT):
     name = pick_model(model, env)
     payload = {"model": name, "stream": True, "messages": [{"role": "user", "content": prompt}],
                "options": {"num_ctx": context}}
-    pieces = []
-    try:
-        with _open("/api/chat", payload, env, timeout=900) as reply:   # the first token can take minutes on a CPU
-            for raw in reply:
-                event = json.loads(raw or b"{}")
-                if event.get("error"):
-                    raise RuntimeError(f"Ollama failed: {event['error']}")
-                piece = (event.get("message") or {}).get("content") or ""
-                if piece:
-                    pieces.append(piece)
-                    if on_text:
-                        on_text(piece)
-    except (urllib.error.URLError, OSError) as exc:
-        raise RuntimeError(f"Ollama failed: {_error_text(exc)}") from exc
-    answer = re.sub(r"<think>.*?</think>", "", "".join(pieces), flags=re.S).strip()
-    if not answer:
-        raise RuntimeError(f"Ollama ({name}) returned no text. Try another model in Setup.")
-    return answer
+    # Reasoning models (gpt-oss, qwen3, ...) sometimes spend the whole reply on reasoning and stop
+    # with an empty answer, so an empty reply is asked again before it counts as a failure.
+    for attempt in range(EMPTY_RETRIES + 1):
+        pieces, reasoning, reason = [], 0, ""
+        try:
+            with _open("/api/chat", payload, env, timeout=900) as reply:   # the first token can take minutes on a CPU
+                for raw in reply:
+                    event = json.loads(raw or b"{}")
+                    if event.get("error"):
+                        raise RuntimeError(f"Ollama failed: {event['error']}")
+                    message = event.get("message") or {}
+                    reasoning += len(message.get("thinking") or "")
+                    reason = event.get("done_reason") or reason
+                    piece = message.get("content") or ""
+                    if piece:
+                        pieces.append(piece)
+                        if on_text:
+                            on_text(piece)
+        except (urllib.error.URLError, OSError) as exc:
+            raise RuntimeError(f"Ollama failed: {_error_text(exc)}") from exc
+        answer = re.sub(r"<think>.*?</think>", "", "".join(pieces), flags=re.S).strip()
+        if answer:
+            return answer
+    detail = (f"it wrote {reasoning} characters of reasoning but no answer" if reasoning else "the reply was empty")
+    if reason == "length":
+        detail += "; it ran out of room, so try a shorter video length"
+    raise RuntimeError(f"Ollama ({name}) returned no text in {EMPTY_RETRIES + 1} tries: {detail}. "
+                       "Press Auto again or try another model in Setup.")
 
 
 def agent_model(model="", env=None, context=AGENT_CONTEXT):
