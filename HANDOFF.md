@@ -1,4 +1,4 @@
-# HANDOFF — 2D Animation Studio (2026-11-11, PR #27 open)
+# HANDOFF — 2D Animation Studio (2026-11-11, after PR #27)
 
 ## 1. Goal
 - Portable Windows studio: ideas → script → narration → GrowKaz animation → thumbnail → explicit YouTube upload.
@@ -6,11 +6,11 @@
 - It must keep working with no AI credits: local AI through Ollama and a local Piper voice.
 
 ## 2. Current status
-- Repo: private `j0p3s/2d-studio-videos-youtube`. `main` is at PR #26. PR #27 (branch `fix/ollama-empty-answer`: this handoff + the empty-answer retry) is open and waits for the user's "merge"; the source checkout is on that branch.
+- Repo: private `j0p3s/2d-studio-videos-youtube`. `main` is at PR #27 (empty-answer retry, this handoff, GPL-3.0 license); no open PRs. The source checkout is on `main`, level with `origin/main`.
 - Source checkout: `C:/Users/Joao/Desktop/2D-Animation-Studio-Setup` (git). Active app folder the user launches: `C:/Users/Joao/Desktop/2d-studio-videos-youtube-main` (not git). It is synced from `main` with `git archive HEAD | tar -x -C <folder>`; files deleted in the repo must be removed there by hand.
 - Everything studio-owned (settings, credentials, skills, caches, tools, `.venv`, projects) lives beside each folder's `.cmd` launchers. Both folders are complete studios with their own `.env`, `.venv`, `.cache` and `work/`. Legacy `C:/Users/Joao/2D-Animation-Studio` is a backup only.
 - The user launches the GUI themself, on 2026-11-11 from the source checkout (its `studio.log` showed the run). Do not launch it for them; hidden smoke runs that do not save settings are fine.
-- 47 Python tests pass on the PR #27 branch; the active folder is at PR #26 (46 tests). The Node encoder test was not re-run after PR #20.
+- 47 Python tests pass in both folders (2026-11-11). The Node encoder test was not re-run after PR #20.
 - Working: real Auto Short and private Publish (https://youtu.be/ZzwRZC0lCG4, channel "The Thought Lab"). Auto never publishes by itself.
 - Working: Auto offers Start fresh / Continue / Cancel; new idea scripts get their own project; Revise keeps the current one.
 - Working: GPU capture/encoding with CPU fallback (1080p sample: ~72 s → 16 s for 480 frames).
@@ -39,6 +39,7 @@
 - All generated content is English. Edge voice default `en-US-AndrewMultilingualNeural`.
 - Canvas + three.js in Chrome/Edge + FFmpeg, not Remotion. Video frames are JPEG; inspected stills/sheets stay PNG. Encoder probe: NVENC → QSV → AMF → CPU.
 - Codex always stays sandboxed; the Full auto checkbox applies to Claude and Gemini only.
+- License (user request 2026-11-11): GPL version 3, `LICENSE` at the root, for the studio's own code. The GrowKaz plugin and the niche-prompt PDF are third-party and are excluded in the README; whether they may be kept in the repo at all is the user's call.
 - Workflow the user follows: each change goes on a branch and a PR; merge and sync the active folder only after they say so.
 
 ## 4. Failed approaches — do not repeat
@@ -65,7 +66,7 @@
 - Local-only, gitignored: `.env`, `settings.json`, `youtube/`, `work/`, `growkaz-stickman-studio/`, `.claude/`, `.codex/`, `.runtime/`, `.cache/`, `.tools/`, `.venv/`.
 
 ## 6. Next steps
-1. On the user's "merge": merge PR #27, pull `main`, sync the active folder, run its tests.
+1. Wait for the user's next request; nothing is in progress.
 2. The user is trying a full offline Auto run. If "returned no text" comes back, read the new detail in `studio.log`. Watch whether the model really calls tools during Animate.
 3. Make one voiceover from the Voice page with Piper and listen to it (this overwrites the current project's voiceover, so only on the user's say-so).
 4. Online path: Setup → "Gemini API" for both stages, Model `gemini-3.5-flash`; try Animate. Claude is the recommended provider for animation.
