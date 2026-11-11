@@ -52,7 +52,9 @@ class HostRenderTests(unittest.TestCase):
             host, commands, _ = self.fixture(Path(folder), replies=['SCENES_READY', 'Cannot inspect images.'])
             with self.assertRaisesRegex(RuntimeError, 'not approved'):
                 host.execute(['build'], 10)
-            self.assertFalse((host.project / 'build/host_animation.json').exists())
+            checkpoint = json.loads((host.project / 'build/host_animation.json').read_text())
+            self.assertEqual(checkpoint['completed'], 0)
+            self.assertEqual(checkpoint['pending'], 0)
             self.assertFalse(any('audio/mix.py' in cmd for cmd in commands))
 
     def test_scene_changes_invalidate_completed_checkpoint(self):
@@ -72,13 +74,50 @@ class HostRenderTests(unittest.TestCase):
             host.execute(['build'], 10)
             self.assertEqual(sum('--sheet' in cmd for cmd in commands), 2)
 
-    def test_render_failure_stops_without_checkpoint_or_export(self):
+    def test_render_failure_preserves_pending_qc_without_export(self):
         with tempfile.TemporaryDirectory() as folder:
             host, commands, _ = self.fixture(Path(folder), fail_render=True)
             with self.assertRaisesRegex(RuntimeError, 'rendering failed'):
                 host.execute(['build'], 10)
-            self.assertFalse((host.project / 'build/host_animation.json').exists())
+            self.assertEqual(json.loads((host.project / 'build/host_animation.json').read_text())['completed'], 0)
             self.assertFalse(any('audio/mix.py' in cmd for cmd in commands))
+
+    def test_third_repair_gets_a_final_render_and_verification(self):
+        with tempfile.TemporaryDirectory() as folder:
+            host, commands, prompts = self.fixture(Path(folder), replies=[
+                'SCENES_READY', 'QC_FIXED', 'QC_FIXED', 'QC_FIXED', 'QC_OK'])
+            host.execute(['build'], 10)
+            self.assertEqual(sum('--sheet' in cmd for cmd in commands), 4)
+            self.assertIn('FINAL VERIFICATION', prompts[-1])
+
+    def test_pending_qc_resumes_without_another_build_request(self):
+        with tempfile.TemporaryDirectory() as folder:
+            replies = ['SCENES_READY', 'QC_FIXED', 'QC_FIXED', 'QC_FIXED', 'QC_PENDING']
+            host, _, prompts = self.fixture(Path(folder), replies=replies)
+            with self.assertRaisesRegex(RuntimeError, 'saved at visual QC'):
+                host.execute(['build'], 10)
+            prompts.clear()
+            replies.append('QC_OK')
+            host.execute(['build'], 10)
+            self.assertEqual(len(prompts), 1)
+            self.assertIn('Visual QC', prompts[0])
+
+    def test_approval_after_editing_requires_another_render(self):
+        with tempfile.TemporaryDirectory() as folder:
+            host, commands, _ = self.fixture(Path(folder))
+            original = host.ask
+            reviews = 0
+            def ask(prompt):
+                nonlocal reviews
+                if 'Visual QC' in prompt:
+                    reviews += 1
+                    if reviews == 1:
+                        (host.project / 'story/shots.json').write_text(
+                            (host.project / 'story/shots.json').read_text() + '\n')
+                return original(prompt)
+            host.ask = ask
+            host.execute(['build'], 10)
+            self.assertEqual(sum('--sheet' in cmd for cmd in commands), 2)
 
     def test_rejects_project_paths_outside_studio_projects(self):
         with tempfile.TemporaryDirectory() as folder:
