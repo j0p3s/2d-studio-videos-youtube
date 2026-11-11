@@ -1,4 +1,4 @@
-# HANDOFF — 2D Animation Studio (2026-11-11, after PR #28)
+# HANDOFF — 2D Animation Studio (2026-11-11, after PR #29 and the history rewrite)
 
 ## 1. Goal
 - Portable Windows studio: ideas → script → narration → GrowKaz animation → thumbnail → explicit YouTube upload.
@@ -6,7 +6,7 @@
 - It must keep working with no AI credits: local AI through Ollama and a local Piper voice.
 
 ## 2. Current status
-- Repo: **public** `j0p3s/2d-studio-videos-youtube` (earlier notes wrongly said private). `main` is at PR #28 (third-party files untracked; #27 was the empty-answer retry and GPL-3.0 license); no open PRs. The source checkout is on `main`, level with `origin/main`.
+- Repo: **public** `j0p3s/2d-studio-videos-youtube` (earlier notes wrongly said private). `main` is at PR #29 (this handoff; #28 untracked the third-party files, #27 was the empty-answer retry and GPL-3.0 license); no open PRs and `main` is the only branch, locally and on GitHub. The source checkout is on `main`, level with `origin/main`.
 - Source checkout: `C:/Users/Joao/Desktop/2D-Animation-Studio-Setup` (git). Active app folder the user launches: `C:/Users/Joao/Desktop/2d-studio-videos-youtube-main` (not git). It is synced from `main` with `git archive HEAD | tar -x -C <folder>`; files deleted in the repo must be removed there by hand.
 - Everything studio-owned (settings, credentials, skills, caches, tools, `.venv`, projects) lives beside each folder's `.cmd` launchers. Both folders are complete studios with their own `.env`, `.venv`, `.cache` and `work/`. Legacy `C:/Users/Joao/2D-Animation-Studio` is a backup only.
 - The user launches the GUI themself, on 2026-11-11 from the source checkout (its `studio.log` showed the run). Do not launch it for them; hidden smoke runs that do not save settings are fine.
@@ -39,7 +39,7 @@
 - All generated content is English. Edge voice default `en-US-AndrewMultilingualNeural`.
 - Canvas + three.js in Chrome/Edge + FFmpeg, not Remotion. Video frames are JPEG; inspected stills/sheets stay PNG. Encoder probe: NVENC → QSV → AMF → CPU.
 - Codex always stays sandboxed; the Full auto checkbox applies to Claude and Gemini only.
-- License (user request 2026-11-11): GPL version 3, `LICENSE` at the root, for the studio's own code. The GrowKaz plugin and the niche-prompt PDF are third-party: they were untracked and gitignored on 2026-11-11 (user request) but stay on disk in both folders, where the installer and `install_local_skills` still need the plugin. They are still in the public git history; purging that needs a history rewrite and force-push, only on the user's explicit say-so. `app/skills/scriptforge/SKILL.md` is derived from that PDF and is still tracked.
+- License (user request 2026-11-11): GPL version 3, `LICENSE` at the root, for the studio's own code. The GrowKaz plugin and the niche-prompt PDF are third-party: they were untracked and gitignored on 2026-11-11 (user request) but stay on disk in both folders, where the installer and `install_local_skills` still need the plugin. On 2026-11-11 (user request) `main` was rewritten with `git filter-branch` to drop both files from every commit and force-pushed, and all 25 merged remote branches were deleted, so every commit ID from before that date changed and old SHAs in notes or PR pages no longer match `main`. GitHub still serves the old commits through the PR pages and direct commit links until GitHub Support purges them (the user has to ask). A local-only ref `refs/codex/turn-diffs/...` (Codex app data) still holds the two blobs; it is not on GitHub. `app/skills/scriptforge/SKILL.md` is derived from that PDF and is still tracked.
 - Workflow the user follows: each change goes on a branch and a PR; merge and sync the active folder only after they say so.
 
 ## 4. Failed approaches — do not repeat
