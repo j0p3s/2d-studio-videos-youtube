@@ -27,6 +27,7 @@ from openart_provider import OPENART
 import session_log
 import piper_voice
 import qwen_voice
+import model_choices
 from thumb_text import drawable, set_label_image
 import ollama_provider
 from ollama_provider import OLLAMA
@@ -94,6 +95,34 @@ OA_MODES = {"Stills + AI video clips": True, "Stills only (Ken Burns, cheaper)":
 CATEGORIES = {"Education": "27", "Science & Technology": "28", "Entertainment": "24",
               "People & Blogs": "22", "Film & Animation": "1", "Howto & Style": "26"}
 ACCENT, ACCENT_HOVER = "#10b981", "#059669"
+BUTTON, BUTTON_HOVER = "#0b7a55", "#096346"   # dark enough for white text (the stock green is too pale)
+MUTED = "#b6beca"                             # secondary text that is still easy to read on the dark cards
+
+
+class ModelBox(ctk.CTkComboBox):
+    """A model dropdown that can also be typed in. "(default)" reads as an empty setting."""
+    def get(self):
+        value = super().get().strip()
+        return "" if value == model_choices.DEFAULT else value
+
+
+def readable_theme():
+    """Larger default text and stronger contrast for every widget. Call before widgets are created."""
+    theme = ctk.ThemeManager.theme
+    theme["CTkFont"]["size"] = 14
+    white = ["#ffffff", "#ffffff"]
+    for widget in ("CTkButton", "CTkOptionMenu", "CTkSegmentedButton"):
+        theme[widget]["text_color"] = white
+    theme["CTkButton"].update(fg_color=[BUTTON, BUTTON], hover_color=[BUTTON_HOVER, BUTTON_HOVER])
+    theme["CTkOptionMenu"].update(fg_color=[BUTTON, BUTTON], button_color=[BUTTON_HOVER, BUTTON_HOVER],
+                                  button_hover_color=["#064d36", "#064d36"])
+    theme["CTkSegmentedButton"].update(selected_color=[BUTTON, BUTTON],
+                                       selected_hover_color=[BUTTON_HOVER, BUTTON_HOVER])
+    theme["CTkEntry"].update(placeholder_text_color=[MUTED, MUTED], border_color=["#7d8794", "#7d8794"],
+                             text_color=white)
+    theme["CTkLabel"]["text_color"] = ["#f1f4f8", "#f1f4f8"]
+    theme["CTkComboBox"].update(text_color=white, border_color=["#7d8794", "#7d8794"],
+                                button_color=[BUTTON, BUTTON], button_hover_color=[BUTTON_HOVER, BUTTON_HOVER])
 SIDEBAR_BG, CARD_BG = "#0f1115", "#171a21"
 
 
@@ -218,6 +247,7 @@ class Studio(ctk.CTk):
         super().__init__()
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("green")
+        readable_theme()
         self.title("2D Animation Studio")
         self.geometry("1240x800")
         self.minsize(1050, 680)
@@ -263,8 +293,8 @@ class Studio(ctk.CTk):
         sb.grid_propagate(False)
         ctk.CTkLabel(sb, text="✦ 2D Animation\n    Studio", font=ctk.CTkFont(size=24, weight="bold"),
                      justify="left", text_color=ACCENT).pack(anchor="w", padx=22, pady=(26, 4))
-        ctk.CTkLabel(sb, text="ScriptForge × GrowKaz Stickman", text_color="#7c8594",
-                     font=ctk.CTkFont(size=12)).pack(anchor="w", padx=24, pady=(0, 22))
+        ctk.CTkLabel(sb, text="ScriptForge × GrowKaz Stickman", text_color=MUTED,
+                     font=ctk.CTkFont(size=14)).pack(anchor="w", padx=24, pady=(0, 22))
         self.nav = {}
         for key, label in [("setup", "⚙   Setup & Tools"), ("script", "①   Script"), ("voice", "②   Voiceover"),
                            ("animate", "③   Animate"), ("upload", "④   Thumbnail & Upload")]:
@@ -274,7 +304,7 @@ class Studio(ctk.CTk):
             b.pack(fill="x", padx=12, pady=3)
             self.nav[key] = b
         ctk.CTkFrame(sb, height=1, fg_color="#232833").pack(fill="x", padx=18, pady=18)
-        ctk.CTkLabel(sb, text="Current video", text_color="#7c8594", font=ctk.CTkFont(size=12)).pack(anchor="w", padx=24)
+        ctk.CTkLabel(sb, text="Current video", text_color=MUTED, font=ctk.CTkFont(size=14)).pack(anchor="w", padx=24)
         self.lbl_current = ctk.CTkLabel(sb, text="—", wraplength=190, justify="left",
                                         font=ctk.CTkFont(size=13, weight="bold"))
         self.lbl_current.pack(anchor="w", padx=24, pady=(2, 8))
@@ -282,7 +312,7 @@ class Studio(ctk.CTk):
                                       font=ctk.CTkFont(size=17, weight="bold"), command=self.auto_run)
         self.btn_auto.pack(fill="x", padx=18, pady=(4, 2))
         ctk.CTkLabel(sb, text="script → voice → animation → thumbnail,\nthen waits for you to Publish",
-                     text_color="#7c8594", font=ctk.CTkFont(size=11), justify="left").pack(anchor="w", padx=22, pady=(0, 8))
+                     text_color=MUTED, font=ctk.CTkFont(size=14), justify="left").pack(anchor="w", padx=22, pady=(0, 8))
         self._auto, self._chain, self._auto_tries, self._auto_n = False, None, {}, 0
         ctk.CTkButton(sb, text="＋ New video", height=34, fg_color="#1d222b", hover_color="#272d38",
                       command=self.new_video).pack(fill="x", padx=18, pady=4)
@@ -326,7 +356,7 @@ class Studio(ctk.CTk):
     @staticmethod
     def header(parent, title, subtitle):
         ctk.CTkLabel(parent, text=title, font=ctk.CTkFont(size=26, weight="bold")).pack(anchor="w")
-        ctk.CTkLabel(parent, text=subtitle, text_color="#8b94a3", font=ctk.CTkFont(size=13),
+        ctk.CTkLabel(parent, text=subtitle, text_color=MUTED, font=ctk.CTkFont(size=14),
                      wraplength=900, justify="left").pack(anchor="w", pady=(2, 14))
 
     @staticmethod
@@ -419,7 +449,7 @@ class Studio(ctk.CTk):
             self.clipboard_clear()
             self.clipboard_append(read())
 
-        ctk.CTkLabel(bar, text=str(LOG_FILE), text_color="#7c8594", font=ctk.CTkFont(size=11)).pack(side="left")
+        ctk.CTkLabel(bar, text=str(LOG_FILE), text_color=MUTED, font=ctk.CTkFont(size=14)).pack(side="left")
         ctk.CTkButton(bar, text="Open file", width=90, fg_color="#1d222b", hover_color="#272d38",
                       command=lambda: open_path(LOG_FILE)).pack(side="right", padx=(6, 0))
         ctk.CTkButton(bar, text="Copy all", width=90, fg_color="#1d222b", hover_color="#272d38",
@@ -836,7 +866,7 @@ class Studio(ctk.CTk):
                       fg_color="#1d222b", hover_color="#272d38", command=lambda: pick("continue")
                       ).pack(fill="x", padx=20, pady=6)
         ctk.CTkLabel(win, text="Starting fresh keeps the current project saved in work\\.",
-                     text_color="#6b7380").pack(anchor="w", padx=20, pady=(4, 0))
+                     text_color=MUTED).pack(anchor="w", padx=20, pady=(4, 0))
         ctk.CTkButton(win, text="Cancel", width=90, fg_color="transparent", border_width=1,
                       border_color="#2b313c", command=lambda: pick(None)).pack(anchor="e", padx=20, pady=10)
         win.protocol("WM_DELETE_WINDOW", lambda: pick(None))
@@ -914,18 +944,14 @@ class Studio(ctk.CTk):
             def save_provider(value, stage=stage):
                 self.settings[stage + "_provider"] = value
                 save_settings(self.settings)
+                self._load_models([stage + "_model"])    # the model list belongs to the provider
             menu = ctk.CTkOptionMenu(row_ai, values=list(PROVIDERS if stage == "animation" else TEXT_PROVIDERS),
                                      command=save_provider)
             menu.set(self.settings.get(stage + "_provider", "Claude"))
             menu.pack(side="left", padx=6)
-            model = ctk.CTkEntry(row_ai, placeholder_text="Model (blank = default)", width=220)
-            model.insert(0, self.settings.get(stage + "_model", ""))
-            model.pack(side="left", padx=6)
-            def save_model(event=None, stage=stage, entry=model):
-                self.settings[stage + "_model"] = entry.get().strip()
-                save_settings(self.settings)
-            model.bind("<FocusOut>", save_model)
-            model.bind("<Return>", save_model)
+            ctk.CTkLabel(row_ai, text="Model").pack(side="left", padx=(12, 0))
+            self._model_box(row_ai, stage + "_model", 260,
+                            lambda stage=stage: self.settings.get(stage + "_provider", "Claude")).pack(side="left", padx=6)
         row_off = ctk.CTkFrame(ai, fg_color="transparent")
         row_off.pack(fill="x", padx=12, pady=5)
         self.sw_offline = ctk.CTkSwitch(row_off, text="Always work offline (Ollama + Piper voice)",
@@ -933,16 +959,10 @@ class Studio(ctk.CTk):
         if self.offline():
             self.sw_offline.select()
         self.sw_offline.pack(side="left")
-        self.ent_ollama = ctk.CTkEntry(row_off, width=220,
-                                       placeholder_text=f"Offline model ({ollama_provider.DEFAULT_MODEL})")
-        self.ent_ollama.insert(0, self.settings.get("ollama_model", ""))
-        self.ent_ollama.pack(side="left", padx=12)
-
-        def save_ollama(event=None):
-            self.settings["ollama_model"] = self.ent_ollama.get().strip()
-            save_settings(self.settings)
-        self.ent_ollama.bind("<FocusOut>", save_ollama)
-        self.ent_ollama.bind("<Return>", save_ollama)
+        ctk.CTkLabel(row_off, text="Offline model").pack(side="left", padx=(16, 0))
+        # A name that is not downloaded yet is allowed here: "Download offline model" fetches it.
+        self.ent_ollama = self._model_box(row_off, "ollama_model", 240, lambda: OLLAMA, may_be_missing=True)
+        self.ent_ollama.pack(side="left", padx=6)
         ctk.CTkButton(row_off, text="Install Ollama", command=self.install_ollama).pack(side="left", padx=4)
         ctk.CTkButton(row_off, text="Download offline model", command=self.download_ollama_model).pack(side="left", padx=4)
         row_oa = ctk.CTkFrame(ai, fg_color="transparent")
@@ -953,15 +973,25 @@ class Studio(ctk.CTk):
                                   next(iter(OA_MODES))))
         self.opt_oa_mode.pack(side="left", padx=6)
         self.ent_oa = {}
-        for key, width, hint in (("openart_clip_seconds", 150, f"Seconds per shot ({shots_video.DEFAULT_CLIP_SECONDS})"),
-                                 ("openart_image_model", 190, f"Image model ({openart_provider.DEFAULT_IMAGE_MODEL})"),
-                                 ("openart_video_model", 190, f"Video model ({openart_provider.DEFAULT_VIDEO_MODEL})")):
+        for key, width, hint in (("openart_clip_seconds", 190, f"Seconds per shot ({shots_video.DEFAULT_CLIP_SECONDS})"),):
             entry = ctk.CTkEntry(row_oa, width=width, placeholder_text=hint)
-            entry.insert(0, str(self.settings.get(key, "")))
+            if self.settings.get(key):
+                entry.insert(0, str(self.settings[key]))
             entry.pack(side="left", padx=6)
             entry.bind("<FocusOut>", self._save_openart)
             entry.bind("<Return>", self._save_openart)
             self.ent_oa[key] = entry
+        row_oam = ctk.CTkFrame(ai, fg_color="transparent")
+        row_oam.pack(fill="x", padx=12, pady=5)
+        ctk.CTkLabel(row_oam, text="OpenArt models", width=200, anchor="w").pack(side="left")
+        for key, kind in (("openart_image_model", "image"), ("openart_video_model", "video")):
+            ctk.CTkLabel(row_oam, text=kind.capitalize()).pack(side="left", padx=(6, 0))
+            self._model_box(row_oam, key, 230, lambda: OPENART, kind=kind).pack(side="left", padx=6)
+        ctk.CTkButton(row_oam, text="Refresh model lists", fg_color="#1d222b", hover_color="#272d38",
+                      command=self._load_models).pack(side="left", padx=10)
+        self.lbl_models = ctk.CTkLabel(ai, text="", text_color=MUTED, anchor="w", justify="left", wraplength=900)
+        self.lbl_models.pack(fill="x", padx=14, pady=(0, 2))
+        self._load_models()
         row_parallel = ctk.CTkFrame(ai, fg_color="transparent")
         row_parallel.pack(fill="x", padx=12, pady=5)
         ctk.CTkLabel(row_parallel, text="OpenArt parallel shots", width=200, anchor="w").pack(side="left")
@@ -1001,6 +1031,88 @@ class Studio(ctk.CTk):
             ctk.CTkButton(row, text=txt, height=38, command=cmd).pack(side="left", padx=(0, 8))
         self.setup_log = self.logbox(p, 300)
         self.setup_log.pack(fill="both", expand=True, pady=(8, 0))
+
+    # ---- model dropdowns: filled from each provider's own model list, and checked against it
+    DEFAULT_MODELS = {"ollama_model": ollama_provider.DEFAULT_MODEL,
+                      "openart_image_model": openart_provider.DEFAULT_IMAGE_MODEL,
+                      "openart_video_model": openart_provider.DEFAULT_VIDEO_MODEL}
+
+    def _model_box(self, parent, key, width, provider, kind=None, may_be_missing=False):
+        if not hasattr(self, "model_boxes"):
+            self.model_boxes = {}
+        box = ModelBox(parent, width=width, values=[model_choices.DEFAULT],
+                       command=lambda value, key=key: self._save_model(key))
+        box.set(self.settings.get(key) or model_choices.DEFAULT)
+        box.bind("<FocusOut>", lambda event, key=key: self._save_model(key))
+        box.bind("<Return>", lambda event, key=key: self._save_model(key))
+        self.model_boxes[key] = {"box": box, "provider": provider, "kind": kind, "names": None,
+                                 "note": "the model list is still loading", "may_be_missing": may_be_missing}
+        return box
+
+    def _load_models(self, keys=None):
+        """Ask each provider for its models (in the background) and fill the dropdowns with the answer."""
+        keys = list(keys or self.model_boxes)
+        jobs = [(key, self.model_boxes[key]["provider"](), self.model_boxes[key]["kind"]) for key in keys]
+        self.lbl_models.configure(text="Reading the model lists from the providers...", text_color=MUTED)
+
+        def run(cmd, cwd=None):
+            done = subprocess.run(cmd, capture_output=True, text=True, env=ENV, encoding="utf-8", errors="replace",
+                                  cwd=str(cwd or HOME), stdin=subprocess.DEVNULL, creationflags=NO_WINDOW)
+            return done.returncode, (done.stdout or "") + (done.stderr or "")
+
+        def work():
+            cache, results = {}, {}
+            for key, provider, kind in jobs:
+                if key in ("script_model", "animation_model") and provider == OPENART:
+                    results[key] = (None, "OpenArt videos use the OpenArt models row")
+                    continue
+                if (provider, kind) not in cache:
+                    cache[provider, kind] = model_choices.available(provider, ENV, openart_run=run, kind=kind)
+                results[key] = cache[provider, kind]
+            self.ui(self._show_models, results)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _show_models(self, results):
+        notes = []
+        for key, (names, note) in results.items():
+            item = self.model_boxes[key]
+            item.update(names=names, note=note)
+            item["box"].configure(values=[model_choices.DEFAULT] + list(names or []))
+            _, problem = model_choices.check(self.settings.get(key, ""), names)
+            if problem and not item["may_be_missing"]:
+                notes.append(f"{problem}: pick another one")
+            elif note and note not in notes:
+                notes.append(note)
+        listed = sum(1 for names, _ in results.values() if names is not None)
+        text = f"Model lists read for {listed} of {len(results)} dropdowns."
+        if notes:
+            text += " " + "; ".join(notes) + "."
+        if listed < len(results):
+            text += " Where there is no list, a typed name is saved without a check."
+        self.lbl_models.configure(text=text, text_color="#f59e0b" if notes else MUTED)
+
+    def _save_model(self, key):
+        item = self.model_boxes[key]
+        value = item["box"].get()
+        if value == self.settings.get(key, ""):
+            return
+        model, problem = model_choices.check(value, item["names"])
+        if problem and item["may_be_missing"]:
+            model, note, colour = value, f'"{value}" is not downloaded yet: press Download offline model.', "#f59e0b"
+        elif problem:
+            item["box"].set(self.settings.get(key) or model_choices.DEFAULT)
+            self.lbl_models.configure(text=f"Not saved: {problem}. Choose one from the dropdown.", text_color="#ef4444")
+            return
+        elif model and item["names"] is None:
+            note, colour = f"Saved, but not checked: {item['note']}.", "#f59e0b"
+        else:
+            default = self.DEFAULT_MODELS.get(key, "the provider's own default")
+            note, colour = (f'Saved: the provider lists "{model}".' if model
+                            else f"Saved: the default model will be used ({default})."), ACCENT
+        self.settings[key] = model
+        save_settings(self.settings)
+        item["box"].set(model or model_choices.DEFAULT)
+        self.lbl_models.configure(text=note, text_color=colour)
 
     def _save_openart(self, event=None):
         was_economy = self.settings.get("openart_save_credits", True)
@@ -1140,7 +1252,7 @@ class Studio(ctk.CTk):
                 ("GrowKaz studio kit", str(STUDIO) if (STUDIO / "render.mjs").exists() else None),
                 ("three.js + Playwright", "installed" if (STUDIO / "node_modules" / "three").exists()
                  and (STUDIO / "node_modules" / "playwright").exists() else None),
-                ("Local skills (make-2d-video, scriptforge)", "installed" if (SKILLS_DIR / "make-2d-video" / "SKILL.md").exists()
+                ("Local skills (video + script)", "installed" if (SKILLS_DIR / "make-2d-video" / "SKILL.md").exists()
                  and (SKILLS_DIR / "scriptforge" / "SKILL.md").exists() else None),
             ]
             for provider in ("OpenAI (Codex)", "Gemini"):
@@ -1173,9 +1285,9 @@ class Studio(ctk.CTk):
                              text_color=(ACCENT if good else "#ef4444"),
                              font=ctk.CTkFont(size=16)).grid(row=r, column=col * 3, sticky="w", pady=3)
                 ctk.CTkLabel(self.checks_frame, text=name, font=ctk.CTkFont(size=14, weight="bold"),
-                             anchor="w", width=260).grid(row=r, column=col * 3 + 1, sticky="w")
-                ctk.CTkLabel(self.checks_frame, text=(val or "missing")[:40], text_color="#8b94a3",
-                             anchor="w", width=220).grid(row=r, column=col * 3 + 2, sticky="w")
+                             anchor="w", width=290).grid(row=r, column=col * 3 + 1, sticky="w")
+                ctk.CTkLabel(self.checks_frame, text=(val or "missing")[:28], text_color=MUTED,
+                             anchor="w", width=200).grid(row=r, column=col * 3 + 2, sticky="w")
         self.run_job("Checking tools", work, show)
 
     def doctor_fix(self):
@@ -1342,7 +1454,7 @@ class Studio(ctk.CTk):
         ctk.CTkButton(hdr, text="Next: Voiceover →", width=150, command=self.script_next).pack(side="right")
         ctk.CTkButton(hdr, text="📂 Load script…", width=120, fg_color="#1d222b", hover_color="#272d38",
                       command=self.load_script).pack(side="right", padx=6)
-        self.txt_script = ctk.CTkTextbox(right, wrap="word", font=ctk.CTkFont(size=13), fg_color="#0d0f13")
+        self.txt_script = ctk.CTkTextbox(right, wrap="word", font=ctk.CTkFont(size=14), fg_color="#0d0f13")
         self.txt_script.pack(fill="both", expand=True, padx=12, pady=(0, 6))
         rev = ctk.CTkFrame(right, fg_color="transparent")
         rev.pack(fill="x", padx=12, pady=(0, 12))
@@ -1393,7 +1505,7 @@ class Studio(ctk.CTk):
         for w in self.ideas_frame.winfo_children():
             w.destroy()
         if not self.ideas:
-            ctk.CTkLabel(self.ideas_frame, text="Pick a niche and press “Get 10 ideas”.", text_color="#7c8594").pack(pady=30)
+            ctk.CTkLabel(self.ideas_frame, text="Pick a niche and press “Get 10 ideas”.", text_color=MUTED).pack(pady=30)
         for i, idea in enumerate(self.ideas, 1):
             f = ctk.CTkFrame(self.ideas_frame, fg_color="#1d222b", corner_radius=10)
             f.pack(fill="x", pady=4, padx=4)
@@ -1559,7 +1671,7 @@ class Studio(ctk.CTk):
         self.opt_qwen_style = ctk.CTkOptionMenu(self.qwen_frame, values=list(qwen_voice.STYLES), width=190)
         self.opt_qwen_style.set(qwen_voice.qwen_style(self.settings.get("qwen_style")))
         self.opt_qwen_style.pack(side="left")
-        self.lbl_qwen = ctk.CTkLabel(self.qwen_frame, text="", text_color="#8b94a3")
+        self.lbl_qwen = ctk.CTkLabel(self.qwen_frame, text="", text_color=MUTED)
         self.lbl_qwen.pack(side="left", padx=10)
         self.el_frame = ctk.CTkFrame(eng, fg_color="transparent")
         ctk.CTkLabel(self.el_frame, text="API key").pack(side="left")
@@ -1598,7 +1710,7 @@ class Studio(ctk.CTk):
         self.txt_narr.pack(fill="both", expand=True)
         bot = ctk.CTkFrame(p, fg_color="transparent")
         bot.pack(fill="x", pady=10)
-        self.lbl_voice = ctk.CTkLabel(bot, text="No voiceover yet", text_color="#8b94a3")
+        self.lbl_voice = ctk.CTkLabel(bot, text="No voiceover yet", text_color=MUTED)
         self.lbl_voice.pack(side="left")
         ctk.CTkButton(bot, text="Next: Animate →", width=150, command=lambda: self.show("animate")).pack(side="right")
         ctk.CTkButton(bot, text="▶ Play", width=90, fg_color="#1d222b", hover_color="#272d38",
@@ -1851,7 +1963,7 @@ class Studio(ctk.CTk):
         self.txt_narr.insert("1.0", self.s.get("narration", ""))
         v = self.s.get("voice")
         self.lbl_voice.configure(text=f"Voiceover: {v}" if v else "No voiceover yet",
-                                 text_color=ACCENT if v else "#8b94a3")
+                                 text_color=ACCENT if v else MUTED)
 
     def _workdir(self):
         if not self.s.get("slug"):
@@ -1956,7 +2068,7 @@ class Studio(ctk.CTk):
         c = self.card(p)
         g = ctk.CTkFrame(c, fg_color="transparent")
         g.pack(fill="x", padx=16, pady=14)
-        self.lbl_anim_src = ctk.CTkLabel(g, text="", anchor="w", text_color="#8b94a3", wraplength=950, justify="left")
+        self.lbl_anim_src = ctk.CTkLabel(g, text="", anchor="w", text_color=MUTED, wraplength=950, justify="left")
         self.lbl_anim_src.grid(row=0, column=0, columnspan=8, sticky="w", pady=(0, 10))
 
         def lab(t, r, col):
@@ -1993,7 +2105,7 @@ class Studio(ctk.CTk):
                       command=self.suggest_characters).grid(row=3, column=6, padx=(10, 0), sticky="w")
         ctk.CTkLabel(g, text="Parts: long videos are built in several AI passes (Auto = one part per ~2.5 min), "
                              "like splitting the script in the tutorial — then rendered as one final MP4.",
-                     text_color="#7c8594", font=ctk.CTkFont(size=11)).grid(row=4, column=0, columnspan=8, sticky="w", pady=(4, 0))
+                     text_color=MUTED, font=ctk.CTkFont(size=14)).grid(row=4, column=0, columnspan=8, sticky="w", pady=(4, 0))
         self.opt_aspect.configure(command=lambda v: self.chk_capt.select() if v == "9:16" else self.chk_capt.deselect())
         self.music_file = None
 
@@ -2729,7 +2841,7 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
                 return items[0]["snippet"]["title"] if items else "(no channel found on this account)"
             self.run_job("Connecting YouTube (finish the sign-in in your browser)", work,
                          lambda name: lbl.configure(text=f"Connected to: {name} ✔"), indeterminate=True)
-        ctk.CTkButton(r, text="Connect", fg_color=ACCENT, command=connect).pack(side="left", padx=4)
+        ctk.CTkButton(r, text="Connect", command=connect).pack(side="left", padx=4)
         lbl = ctk.CTkLabel(win, text=("Connected ✔" if (YT_DIR / "token.json").exists() else ""), text_color=ACCENT)
         lbl.pack(pady=8)
 
@@ -2828,7 +2940,7 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
             vid, note = r
             url = f"https://youtu.be/{vid}"
             self.lbl_up.configure(text=f"Published ✔  {url}")
-            self.btn_publish.configure(fg_color=ACCENT, hover_color=ACCENT_HOVER, text_color="#ffffff")
+            self.btn_publish.configure(fg_color=BUTTON, hover_color=BUTTON_HOVER, text_color="#ffffff")
             self.s.setdefault("uploads", []).append(url)
             self.save_state()
             if messagebox.askyesno("Uploaded", f"Done! {url}{note}\n\nOpen in YouTube Studio?"):
