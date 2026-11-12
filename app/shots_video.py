@@ -11,13 +11,24 @@ import json
 import math
 import re
 import shutil
+import threading
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from pathlib import Path
 
 DEFAULT_CLIP_SECONDS = 6
 MIN_CLIP_SECONDS, MAX_CLIP_SECONDS = 3, 20
 MAX_SHOTS = 150
 FPS = 24
+DEFAULT_PARALLEL_SHOTS = 3
+MAX_PARALLEL_SHOTS = 4
 RESOLUTIONS = {"720p": 720, "1080p": 1080, "1440p": 1440, "2160p": 2160}
+
+
+def parallel_shots(value=None):
+    try:
+        return max(1, min(MAX_PARALLEL_SHOTS, int(value)))
+    except (ValueError, TypeError, OverflowError):
+        return DEFAULT_PARALLEL_SHOTS
 
 
 def clip_seconds(value):
@@ -173,7 +184,7 @@ class ShotsBuild:
         self.ask, self.run, self.progress, self.check, self.log = ask, run, progress, check, log
 
     def execute(self, *, voice, duration, narration, title, aspect, resolution, look="", seconds=DEFAULT_CLIP_SECONDS,
-                motion=True, music=None, out_name=None):
+                motion=True, music=None, out_name=None, parallel=1):
         seconds = clip_seconds(seconds)
         out_name = out_name or title or "video"
         bounds = slices(duration, seconds)
@@ -206,26 +217,76 @@ class ShotsBuild:
         segments = []
         seg_dir = self.dir / "segments"
         seg_dir.mkdir(exist_ok=True)
-        for i, ((start, end), (image_prompt, motion_prompt)) in enumerate(zip(bounds, plan), 1):
+        stop = threading.Event()
+        errors, error_lock = [], threading.Lock()
+
+        def check():
             self.check()
-            stem, seg = f"shot_{i:03d}", seg_dir / f"seg_{i:03d}.mp4"
-            base = 0.05 + 0.80 * (i - 1) / n
-            step = 0.80 / n
+            if stop.is_set():
+                raise RuntimeError("Shot generation stopped after another shot failed.")
+
+        def generate_shot(i):
+            check()
+            image_prompt, motion_prompt = plan[i - 1]
+            stem = f"shot_{i:03d}"
             still = existing(self.dir, stem, STILL_TYPES)
             if still is None:
-                self.progress(base, f"shot {i}/{n}: still image")
+                check()
                 made = self.make_still(image_prompt, aspect, self.dir / (stem + "_image"))
                 still = Path(shutil.move(str(made), str(self.dir / (stem + Path(made).suffix.lower()))))
                 shutil.rmtree(self.dir / (stem + "_image"), ignore_errors=True)
                 self.log(f"🖼 shot {i}/{n}: {image_prompt[:110]}")
             clip = existing(self.dir, stem, CLIP_TYPES) if motion else None
             if motion and clip is None:
-                self.progress(base + step * 0.4, f"shot {i}/{n}: animating")
+                check()
                 made = self.make_clip(motion_prompt, still, aspect, resolution, self.dir / (stem + "_video"))
                 clip = Path(shutil.move(str(made), str(self.dir / (stem + Path(made).suffix.lower()))))
                 shutil.rmtree(self.dir / (stem + "_video"), ignore_errors=True)
                 self.log(f"🎥 shot {i}/{n}: {motion_prompt[:110]}")
-            self.progress(base + step * 0.85, f"shot {i}/{n}: cutting to {end - start:.1f}s")
+            return still, clip
+
+        def guarded_generate(i):
+            try:
+                return generate_shot(i)
+            except BaseException as error:
+                with error_lock:
+                    if not errors:
+                        errors.append(error)
+                stop.set()
+                raise
+
+        # Submit only a bounded window. On failure no further shots are scheduled;
+        # in-flight calls finish and save their media for the next run.
+        workers = min(n, parallel_shots(parallel))
+        self.log(f"Generating up to {workers} shots in parallel.")
+        media, pending, next_shot = {}, {}, 1
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="openart-shot") as pool:
+            try:
+                while next_shot <= n or pending:
+                    self.check()
+                    while next_shot <= n and len(pending) < workers and not stop.is_set():
+                        pending[pool.submit(guarded_generate, next_shot)] = next_shot
+                        next_shot += 1
+                    done, _ = wait(pending, timeout=0.2, return_when=FIRST_COMPLETED)
+                    for future in done:
+                        i = pending.pop(future)
+                        media[i] = future.result()
+                    self.progress(min(0.70, 0.05 + 0.65 * len(media) / n),
+                                  f"generating shots: {len(media)}/{n} ready, {len(pending)} active")
+            except BaseException:
+                stop.set()
+                for future in pending:
+                    future.cancel()
+                if errors:
+                    raise errors[0]
+                raise
+
+        # Encode locally in sequence to avoid saturating the CPU and keep timeline order.
+        for i, (start, end) in enumerate(bounds, 1):
+            self.check()
+            still, clip = media[i]
+            seg = seg_dir / f"seg_{i:03d}.mp4"
+            self.progress(0.70 + 0.15 * (i - 1) / n, f"shot {i}/{n}: cutting to {end - start:.1f}s")
             cmd = (ffmpeg_clip(clip, seg, end - start, size) if motion
                    else ffmpeg_still(still, seg, end - start, size, zoom_in=i % 2 == 1))
             rc, output = self.run(cmd)
