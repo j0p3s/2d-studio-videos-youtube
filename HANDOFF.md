@@ -2,15 +2,15 @@
 
 ## 1. Goal
 - Portable Windows studio: ideas → script → narration → GrowKaz animation → thumbnail → explicit YouTube upload.
-- Scripts and animation can each use Claude, OpenAI (Codex), Gemini (CLI), Gemini API (key from `.env`) or Ollama (offline).
+- Scripts and animation can each use Claude, OpenAI (Codex), Gemini (CLI), Gemini API (key from `.env`) or Ollama (offline). Animation can also use OpenArt (AI-generated shots through the official `openart` CLI, browser login).
 - It must keep working with no AI credits: local AI through Ollama and a local Piper voice.
 
 ## 2. Current status
 - Repo: **public** `j0p3s/2d-studio-videos-youtube` (earlier notes wrongly said private). `main` is at PR #29 (this handoff; #28 untracked the third-party files, #27 was the empty-answer retry and GPL-3.0 license); no open PRs and `main` is the only branch, locally and on GitHub. The source checkout is on `main`, level with `origin/main`.
-- Source checkout: `C:/Users/Joao/Desktop/2D-Animation-Studio-Setup` (git). Active app folder the user launches: `C:/Users/Joao/Desktop/2d-studio-videos-youtube-main` (not git). It is synced from `main` with `git archive HEAD | tar -x -C <folder>`; files deleted in the repo must be removed there by hand.
-- Everything studio-owned (settings, credentials, skills, caches, tools, `.venv`, projects) lives beside each folder's `.cmd` launchers. Both folders are complete studios with their own `.env`, `.venv`, `.cache` and `work/`. Legacy `C:/Users/Joao/2D-Animation-Studio` is a backup only.
+- The only studio folder is the git checkout `C:/Users/Joao/Desktop/2D-Animation-Studio-Setup` (user, 2026-11-12: the earlier "active folder" `2d-studio-videos-youtube-main` does not exist, so there is no `git archive` sync step any more). Updating it is `git fetch origin <branch> && git checkout <branch>` (or `git pull origin main` after a merge), then restarting the GUI.
+- Everything studio-owned (settings, credentials, skills, caches, tools, `.venv`, projects) lives beside the `.cmd` launchers in that folder (`.env`, `.venv`, `.cache`, `work/`, all gitignored). Legacy `C:/Users/Joao/2D-Animation-Studio` is a backup only.
 - The user launches the GUI themself, on 2026-11-11 from the source checkout (its `studio.log` showed the run). Do not launch it for them; hidden smoke runs that do not save settings are fine.
-- 47 Python tests pass in both folders (2026-11-11). The Node encoder test was not re-run after PR #20.
+- 47 Python tests passed in the checkout (2026-11-11); 54 with the OpenArt tests (51 pass in a Linux container, see PR #30). The Node encoder test was not re-run after PR #20.
 - Working: real Auto Short and private Publish (https://youtu.be/ZzwRZC0lCG4, channel "The Thought Lab"). Auto never publishes by itself.
 - Working: Auto offers Start fresh / Continue / Cancel; new idea scripts get their own project; Revise keeps the current one.
 - Working: GPU capture/encoding with CPU fallback (1080p sample: ~72 s → 16 s for 480 frames).
@@ -22,6 +22,7 @@
 - 2026-11-11: the user ran Auto offline with `gpt-oss:20b` (now downloaded). Ideas worked; "Writing script" failed once with "returned no text" after 30 s. Six direct repeats with the real ScriptForge prompt all answered (20-43 s), so the cause is unconfirmed; `ollama_provider.text` now asks again up to twice on an empty answer and reports reasoning length and stop reason (PR #27).
 - Not yet run end to end: the host-render flow on a full multi-pass video; a GUI Animate run with Gemini API; a full offline Animate run; a whole voiceover from the Voice page with Piper; the full installer after its offline/Piper changes.
 - Android prototype in `Adnroid-App/` (spelling intentional): separate native renderer, not a GrowKaz port.
+- OpenArt provider (branch `ccr-0a854077-utej2x`, PR #30, 2026-11-12): `app/openart_provider.py` (drives the `openart` CLI: install from GitHub releases into `.tools`, `account`, `model list`, `generate image/video --json -o`) and `app/shots_video.py` (shot slicing, shot-plan prompt/parsing, FFmpeg cut/concat/mux, `ShotsBuild`). A first version of the same feature used Higgsfield's REST API; the user asked to replace it with OpenArt before it was ever run. Not run against the real CLI: openart.ai was unreachable from the session, so the command surface was taken from the CLI's README. First real run should be Setup → Install OpenArt → Sign in → Check OpenArt account, then a Short in stills-only mode.
 
 ## 3. Key decisions and reasons
 - Offline mode: provider "Ollama (offline)" plus a Setup switch "Always work offline" that overrides both provider menus, forces the Piper voice and sets `HF_HUB_OFFLINE` for Whisper. It means local AI and voice, not "no internet": Upload is not blocked (user request).
@@ -40,7 +41,8 @@
 - Canvas + three.js in Chrome/Edge + FFmpeg, not Remotion. Video frames are JPEG; inspected stills/sheets stay PNG. Encoder probe: NVENC → QSV → AMF → CPU.
 - Codex always stays sandboxed; the Full auto checkbox applies to Claude and Gemini only.
 - License (user request 2026-11-11): GPL version 3, `LICENSE` at the root, for the studio's own code. The GrowKaz plugin and the niche-prompt PDF are third-party: they were untracked and gitignored on 2026-11-11 (user request) but stay on disk in both folders, where the installer and `install_local_skills` still need the plugin. On 2026-11-11 (user request) `main` was rewritten with `git filter-branch` to drop both files from every commit and force-pushed, and all 25 merged remote branches were deleted, so every commit ID from before that date changed and old SHAs in notes or PR pages no longer match `main`. GitHub still serves the old commits through the PR pages and direct commit links until GitHub Support purges them (the user has to ask). A local-only ref `refs/codex/turn-diffs/...` (Codex app data) still holds the two blobs; it is not on GitHub. `app/skills/scriptforge/SKILL.md` is derived from that PDF and is still tracked.
-- Workflow the user follows: each change goes on a branch and a PR; merge and sync the active folder only after they say so.
+- Workflow the user follows: each change goes on a branch and a PR; merge only after they say so. They test by checking the branch out in the studio folder.
+- OpenArt: an animation-only provider (`TEXT_PROVIDERS` keeps it out of the script menu). OpenArt has no public key-based API (its help center says so); the official route is the `openart` CLI with OAuth browser login, so the studio runs the binary from `.tools` with the studio ENV (login lands in `.runtime/home/.openart`, never the user's profile) and asks for `--json` output and `-o <folder>` downloads. The official `install.ps1` was deliberately not used: it edits the user's PATH; the studio downloads the release asset itself. Shot timing is fixed slices (setting `openart_clip_seconds`, default 6) with narration estimated by character position, so no Whisper is needed; the script-stage AI writes the per-shot prompts. `openart_motion` false = stills with an FFmpeg Ken Burns zoom (far cheaper). Models: settings `openart_image_model` / `openart_video_model` (defaults `nano-banana-2` / `kling-3-omni` from the CLI README; the stage Model box is ignored). `--aspect-ratio`, `--resolution` and `--timeout` are "model-specific" per the README, so a rejected flag is dropped and the call retried once. Finished stills/clips and `plan.json` under `work/<slug>/openart/` are reused on the next run when voice, duration, shot length, aspect and mode match; otherwise the folder is cleared. Clip length is the model's own, so each clip is cut or last-frame-frozen (`tpad`) to its slice. Offline mode, captions, music by mood and the interactive agent are refused/skipped with a message.
 
 ## 4. Failed approaches — do not repeat
 - Replacing `ai_providers.py` with a Gemini-only module (different `run_agent`/`portable_prompt` signatures, lowercase provider names).
@@ -59,6 +61,7 @@
 - `app/ollama_provider.py`: local AI (server start, model check, streamed text, model download, Claude-CLI environment). `app/piper_voice.py`: Piper voice to MP3. Tests for both in `app/test_ollama_provider.py` (fake Ollama server).
 - `app/session_log.py`: the session log (tested). The GUI logs jobs, child-process output, dialogs and tracebacks through it.
 - `app/host_render.py`: host rendering, visual QC checkpoints, final validation (has tests).
+- `app/openart_provider.py`, `app/shots_video.py`: OpenArt CLI driver and the shots-to-video build. Tests: `app/test_openart.py` (fake CLI, fake release feed, build with stubbed generation).
 - `app/portable_paths.py`, `app/language_policy.py`: local paths/migration, English-only policy and the voice-engine default (both tested).
 - `app/patch_kit.py`, `app/video_encoder.mjs`: idempotent kit patches and encoder selection.
 - `Install-2D-Studio.cmd`: 8 steps; creates a `.env` template, installs `piper-tts`, pre-downloads the Whisper `small` model and the Piper voice, and offers Ollama + `gpt-oss:20b` (two Y/N prompts that default to N after 30 s). `Launch-2D-Studio.cmd` starts the GUI.
@@ -72,13 +75,14 @@
 4. Online path: Setup → "Gemini API" for both stages, Model `gemini-3.5-flash`; try Animate. Claude is the recommended provider for animation.
 5. Run Auto on a long video (~500 s, four passes) and check host-rendered sheets, checkpoint resume and cross-pass style.
 6. After code changes run `.venv/Scripts/python.exe -m unittest discover -s app -p "test_*.py"` and `node --test app/video_encoder.test.mjs`.
+7. OpenArt: first real run (Install → Sign in → Check account, then a Short with "Stills only"). Verify the `--timeout` value format (`5m`/`20m`, Go-style, assumed), the `--aspect-ratio` flag on `generate image`, the JSON shape of `generate`/`account` (`openart_provider.result_url` walks any `url` key) and that `-o <folder>` writes a file with a media extension. Then one clip in "Stills + AI video clips" and check the cut/freeze quality.
 
 ## 7. Open questions / gotchas
 - Offline animation is NOT proven. Verified live: Ollama text through the GUI, Piper voice, Whisper loading offline, and the Claude CLI reaching Ollama. With the only chat model on this PC (`llama3.2`, 3B) the CLI got an answer but the model claimed it wrote a file without calling the tool. `gpt-oss:20b` is downloaded now (runs 100% on the GPU) but has not reached Animate yet.
 - `gpt-oss` is a reasoning model: Ollama returns its reasoning in `message.thinking` and the answer in `message.content`; only the content is used.
 - Ollama on this PC: `gpt-oss:20b`, `llama3.2`, `dolphin-mistral`, `wizard-vicuna-uncensored`, a deepseek-coder GGUF, and a leftover test copy `llama3.2-latest-studio32k` (remove with `ollama rm llama3.2-latest-studio32k`). A short text answer took 76 s on `llama3.2`.
-- The active folder has `piper-tts` and the `en_US-ryan-high` voice, but no Whisper model in its `.cache`; it downloads on the first video made online, or by re-running that folder's installer. The source checkout has it.
-- The source checkout's settings now select OpenAI (Codex) for scripts and Claude for animation, with "Always work offline" on. The active folder's settings may still select Gemini (CLI), which Google rejects.
+- The checkout has `piper-tts`, the `en_US-ryan-high` voice and the Whisper model in `.cache`.
+- The checkout's settings (2026-11-11) select OpenAI (Codex) for scripts and Claude for animation, with "Always work offline" on. OpenArt needs that switch off.
 - Gemini models on 2026-11-11: through the CLI with the key, `gemini-3.5-flash` answered but took ~115 s for one line; `gemini-flash-latest` (set in `.env`) did not answer within 200 s; `gemini-3.8-flash` (code default) returned 503; `gemini-2.5-flash` is retired (404). The Setup Model box overrides `.env`, which overrides the default.
 - The Windows user variable `GEMINI_MODEL` has been deleted. `GEMINI_API_KEY` may still exist as a user variable; the studio does not depend on it.
 - Run the installer non-interactively by full path with stdin redirected, through PowerShell (`cmd //c` fails from Git Bash); its last `choice` prompt then errors harmlessly.

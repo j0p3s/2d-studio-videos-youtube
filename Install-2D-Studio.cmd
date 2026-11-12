@@ -93,6 +93,7 @@ if not defined CLAUDE_OK (
 if defined CLAUDE_OK (echo   [ok] Claude Code found) else (echo   [!] Claude Code not found - the GUI Setup page can retry this.)
 echo   [info] Codex and Gemini are optional alternatives: install and sign in from GUI Setup.
 echo   [info] Gemini API needs GEMINI_API_KEY in the .env file beside this installer.
+echo   [info] OpenArt (AI video shots) is installed from Setup: Install OpenArt, then Sign in.
 if not exist "%HOME2D%\.env" (
   >"%HOME2D%\.env" echo # Keys and defaults for the studio. This file stays on this PC.
   >>"%HOME2D%\.env" echo # GEMINI_API_KEY=
