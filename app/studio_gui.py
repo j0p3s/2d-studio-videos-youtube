@@ -2,7 +2,7 @@
 
 Pipeline:  ScriptForge (ideas + script, via the selected AI)  ->  voiceover (edge-tts or your file)
            ->  GrowKaz Stickman Studio animation (the selected agent runs the make-2d-video skill)
-               or Higgsfield AI shots cut to the narration (higgsfield_video, no agent)
+               or OpenArt AI shots cut to the narration (shots_video + openart_provider, no agent)
            ->  thumbnail  ->  YouTube upload (YouTube Data API v3).
 """
 import hashlib
@@ -19,9 +19,9 @@ import traceback
 import webbrowser
 from ai_providers import PROVIDERS, TEXT_PROVIDERS, cli_command, run_agent, portable_prompt, load_env_file
 from host_render import HostAnimation
-import higgsfield_provider
-import higgsfield_video
-from higgsfield_provider import HIGGSFIELD
+import openart_provider
+import shots_video
+from openart_provider import OPENART
 import session_log
 import piper_voice
 import ollama_provider
@@ -85,7 +85,7 @@ CUSTOM = "Custom sub-niche..."
 VOICES = ENGLISH_VOICES
 STYLES = {"Emerald (GrowKaz)": "emerald", "Ember Forge": "ember", "Arctic Glass": "arctic",
           "Sakura Bloom": "sakura", "Retro Print": "retro", "Let AI choose": "auto"}
-HF_MODES = {"Stills + AI motion (DoP)": True, "Stills only (Ken Burns, cheaper)": False}
+OA_MODES = {"Stills + AI video clips": True, "Stills only (Ken Burns, cheaper)": False}
 CATEGORIES = {"Education": "27", "Science & Technology": "28", "Entertainment": "24",
               "People & Blogs": "22", "Film & Animation": "1", "Howto & Style": "26"}
 ACCENT, ACCENT_HOVER = "#10b981", "#059669"
@@ -117,7 +117,7 @@ def fresh_env():
 
 
 ENV = fresh_env()
-# API keys the user keeps in the studio's .env file (Gemini API, Higgsfield).
+# API keys the user keeps in the studio's .env file (Gemini API).
 load_env_file(HOME / ".env", ENV)
 session_log.start(LOG_FILE, ENV)
 session_log.write("INFO", f"2D Animation Studio started in {HOME} (Python {sys.version.split()[0]})")
@@ -561,8 +561,8 @@ class Studio(ctk.CTk):
         stage = "animation" if tools else "script"
         ai = getattr(self, "_job_ai", self.settings)
         provider = ai.get(stage + "_provider", "Claude")
-        if provider == HIGGSFIELD and tools:
-            raise RuntimeError("Higgsfield videos are built by the studio itself: use Make the video.")
+        if provider == OPENART and tools:
+            raise RuntimeError("OpenArt videos are built by the studio itself: use Make the video.")
         if self.settings.get("offline") or provider == OLLAMA:
             # the stage's Model box only counts when Ollama was chosen for that stage
             model = (ai.get(stage + "_model", "") if provider == OLLAMA else "") or ai.get("ollama_model", "")
@@ -933,25 +933,31 @@ class Studio(ctk.CTk):
         self.ent_ollama.bind("<Return>", save_ollama)
         ctk.CTkButton(row_off, text="Install Ollama", command=self.install_ollama).pack(side="left", padx=4)
         ctk.CTkButton(row_off, text="Download offline model", command=self.download_ollama_model).pack(side="left", padx=4)
-        row_hf = ctk.CTkFrame(ai, fg_color="transparent")
-        row_hf.pack(fill="x", padx=12, pady=5)
-        ctk.CTkLabel(row_hf, text="Higgsfield (key in .env)", width=200, anchor="w").pack(side="left")
-        self.opt_hf_mode = ctk.CTkOptionMenu(row_hf, values=list(HF_MODES), width=250, command=self._save_higgsfield)
-        self.opt_hf_mode.set(next((k for k, v in HF_MODES.items() if v == self.settings.get("higgsfield_motion", True)),
-                                  next(iter(HF_MODES))))
-        self.opt_hf_mode.pack(side="left", padx=6)
-        self.ent_hf_seconds = ctk.CTkEntry(row_hf, width=190,
-                                           placeholder_text=f"Seconds per shot ({higgsfield_video.DEFAULT_CLIP_SECONDS})")
-        self.ent_hf_seconds.insert(0, str(self.settings.get("higgsfield_clip_seconds", "")))
-        self.ent_hf_seconds.pack(side="left", padx=6)
-        self.ent_hf_seconds.bind("<FocusOut>", self._save_higgsfield)
-        self.ent_hf_seconds.bind("<Return>", self._save_higgsfield)
-        ctk.CTkButton(row_hf, text="Test Higgsfield key", command=self.test_higgsfield).pack(side="left", padx=4)
+        row_oa = ctk.CTkFrame(ai, fg_color="transparent")
+        row_oa.pack(fill="x", padx=12, pady=5)
+        ctk.CTkLabel(row_oa, text="OpenArt (AI shots)", width=200, anchor="w").pack(side="left")
+        self.opt_oa_mode = ctk.CTkOptionMenu(row_oa, values=list(OA_MODES), width=220, command=self._save_openart)
+        self.opt_oa_mode.set(next((k for k, v in OA_MODES.items() if v == self.settings.get("openart_motion", True)),
+                                  next(iter(OA_MODES))))
+        self.opt_oa_mode.pack(side="left", padx=6)
+        self.ent_oa = {}
+        for key, width, hint in (("openart_clip_seconds", 150, f"Seconds per shot ({shots_video.DEFAULT_CLIP_SECONDS})"),
+                                 ("openart_image_model", 190, f"Image model ({openart_provider.DEFAULT_IMAGE_MODEL})"),
+                                 ("openart_video_model", 190, f"Video model ({openart_provider.DEFAULT_VIDEO_MODEL})")):
+            entry = ctk.CTkEntry(row_oa, width=width, placeholder_text=hint)
+            entry.insert(0, str(self.settings.get(key, "")))
+            entry.pack(side="left", padx=6)
+            entry.bind("<FocusOut>", self._save_openart)
+            entry.bind("<Return>", self._save_openart)
+            self.ent_oa[key] = entry
         buttons_ai = ctk.CTkFrame(ai, fg_color="transparent")
         buttons_ai.pack(fill="x", padx=12, pady=6)
         for provider in ("OpenAI (Codex)", "Gemini"):
             ctk.CTkButton(buttons_ai, text=f"Install {provider}", command=lambda v=provider: self.install_ai(v)).pack(side="left", padx=4)
             ctk.CTkButton(buttons_ai, text=f"Sign in: {provider}", command=lambda v=provider: self.login_ai(v)).pack(side="left", padx=4)
+        for txt, cmd in [("Install OpenArt", self.install_openart), ("Sign in: OpenArt", self.login_openart),
+                         ("Check OpenArt account", self.check_openart)]:
+            ctk.CTkButton(buttons_ai, text=txt, command=cmd).pack(side="left", padx=4)
         c = self.card(p)
         self.checks_frame = ctk.CTkFrame(c, fg_color="transparent")
         self.checks_frame.pack(fill="x", padx=16, pady=14)
@@ -964,21 +970,44 @@ class Studio(ctk.CTk):
         self.setup_log = self.logbox(p, 300)
         self.setup_log.pack(fill="both", expand=True, pady=(8, 0))
 
-    def _save_higgsfield(self, event=None):
-        self.settings["higgsfield_motion"] = HF_MODES.get(self.opt_hf_mode.get(), True)
-        seconds = self.ent_hf_seconds.get().strip()
-        self.settings["higgsfield_clip_seconds"] = higgsfield_video.clip_seconds(seconds) if seconds else ""
+    def _save_openart(self, event=None):
+        self.settings["openart_motion"] = OA_MODES.get(self.opt_oa_mode.get(), True)
+        for key, entry in self.ent_oa.items():
+            value = entry.get().strip()
+            if key == "openart_clip_seconds":
+                value = shots_video.clip_seconds(value) if value else ""
+            self.settings[key] = value
         save_settings(self.settings)
 
-    def test_higgsfield(self):
-        """One cheap authenticated request (the DoP motion list) proves the key in .env works."""
+    def _openart_run(self, cmd, cwd=None):
+        """Run one OpenArt CLI command through the job runner (Stop kills it). Returns (exit code, output)."""
+        lines = []
+        rc = self.run_cmd(cmd, cwd=str(cwd or HOME), on_line=lines.append)
+        return rc, "\n".join(lines)
+
+    def install_openart(self):
+        """The release binary goes into the studio's .tools folder (already on PATH); no installer script,
+        so the user's Windows PATH and profile stay untouched."""
         def work():
-            higgsfield_provider.credentials(ENV)
-            motions = higgsfield_provider.motions(ENV)
-            self.log(self.setup_log, f"Higgsfield key works: {len(motions)} camera motions available for DoP.")
-            return motions
-        self.log(self.setup_log, "> Higgsfield: checking the key in .env …")
-        self.run_job("Testing Higgsfield key", work, indeterminate=True)
+            openart_provider.install(HOME / ".tools", lambda text: self.log(self.setup_log, text))
+            self.log(self.setup_log, 'Now press "Sign in: OpenArt": a console and your browser open for the OpenArt login.')
+        self.run_job("Installing OpenArt CLI", work, lambda _: self.check_setup(), indeterminate=True)
+
+    def login_openart(self):
+        try:
+            cmd = openart_provider.command(ENV, "login")
+        except RuntimeError as e:
+            messagebox.showerror("OpenArt", str(e))
+            return
+        # The credential lands in the studio's own home (.runtime/home/.openart), like the other CLIs.
+        subprocess.Popen(["cmd", "/k", *cmd], cwd=str(HOME), env=ENV, creationflags=subprocess.CREATE_NEW_CONSOLE)
+
+    def check_openart(self):
+        def work():
+            info = openart_provider.account(self._openart_run, ENV)
+            self.log(self.setup_log, "OpenArt account: " + json.dumps(info)[:500])
+        self.log(self.setup_log, "> openart account --json")
+        self.run_job("Checking OpenArt account", work, indeterminate=True)
 
     def _toggle_offline(self):
         self.settings["offline"] = bool(self.sw_offline.get())
@@ -1082,7 +1111,8 @@ class Studio(ctk.CTk):
                 except Exception:
                     items.append((label, None))
             items += self._offline_status()
-            items.append(("Higgsfield API key (optional)", "in .env" if higgsfield_provider.configured(ENV) else None))
+            exe = openart_provider.executable(ENV)
+            items.append(("OpenArt CLI (optional)", probe([exe, "version"]) if exe else None))
             items.append(("YouTube connected", "yes" if (YT_DIR / "token.json").exists() else
                           ("client_secret.json added" if (YT_DIR / "client_secret.json").exists() else None)))
             return items
@@ -1998,8 +2028,8 @@ FINAL_VIDEO: <absolute path to the mp4>"""
         if not self.s.get("voice"):
             messagebox.showinfo("Character styles", "Make the voiceover first (② Voiceover).")
             return
-        if self.settings.get("animation_provider") == HIGGSFIELD:
-            return self._suggest_characters_higgsfield()
+        if self.settings.get("animation_provider") == OPENART:
+            return self._suggest_characters_openart()
         if not STUDIO.exists():
             messagebox.showerror("Character styles", "Studio kit missing — run the installer from Setup.")
             return
@@ -2073,8 +2103,8 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
             ctk.CTkButton(card, text="Use this style", command=choose).pack(anchor="e", padx=12, pady=10)
 
     def make_video(self):
-        if self.settings.get("animation_provider") == HIGGSFIELD:
-            return self._make_video_higgsfield()
+        if self.settings.get("animation_provider") == OPENART:
+            return self._make_video_openart()
         try:
             prompt = self._video_prompt()
         except RuntimeError as e:
@@ -2157,20 +2187,23 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
             messagebox.showwarning("Animate", "Animation agent finished but no MP4 was found. Read the log, "
                                               "or continue in the interactive agent window.")
 
-    # ---- Higgsfield: AI-generated shots cut to the narration (no GrowKaz kit, no agent)
-    def _higgsfield_ready(self):
+    # ---- OpenArt: AI-generated shots cut to the narration (no GrowKaz kit, no agent)
+    def _openart_ready(self):
         if self.offline():
-            raise RuntimeError("Higgsfield needs the internet. Turn off \"Always work offline\" in Setup, "
+            raise RuntimeError("OpenArt needs the internet. Turn off \"Always work offline\" in Setup, "
                                "or choose another animation provider.")
         if not which("ffmpeg") or not which("ffprobe"):
             raise RuntimeError("FFmpeg is missing. Run the installer from Setup.")
-        higgsfield_provider.credentials(ENV)
-        higgsfield_provider.video_model(self.settings.get("animation_model", ""))
+        openart_provider.command(ENV, "version")   # raises with the Setup hint when the CLI is missing
 
-    def _make_video_higgsfield(self):
+    def _openart_models(self):
+        return (self.settings.get("openart_image_model", "").strip() or openart_provider.DEFAULT_IMAGE_MODEL,
+                self.settings.get("openart_video_model", "").strip() or openart_provider.DEFAULT_VIDEO_MODEL)
+
+    def _make_video_openart(self):
         try:
             self._video_prompt()   # checks the voiceover and saves aspect, resolution and look notes
-            self._higgsfield_ready()
+            self._openart_ready()
         except RuntimeError as e:
             messagebox.showinfo("Animate", str(e))
             return
@@ -2178,42 +2211,48 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
         if dur <= 0:
             messagebox.showinfo("Animate", "Could not read the voiceover length (ffprobe). Make the voiceover again.")
             return
-        seconds = higgsfield_video.clip_seconds(self.settings.get("higgsfield_clip_seconds"))
-        motion = bool(self.settings.get("higgsfield_motion", True))
-        n = len(higgsfield_video.slices(dur, seconds))
-        what = "one still and one DoP video clip each" if motion else "one still each, animated by FFmpeg"
+        seconds = shots_video.clip_seconds(self.settings.get("openart_clip_seconds"))
+        motion = bool(self.settings.get("openart_motion", True))
+        image_model, video_model = self._openart_models()
+        n = len(shots_video.slices(dur, seconds))
+        what = (f"one {image_model} still and one {video_model} clip each" if motion
+                else f"one {image_model} still each, animated by FFmpeg")
         if not self._auto and not messagebox.askyesno(
-                "Higgsfield", f"This makes {n} AI shots of about {seconds:g} s ({what}) for a {dur:.0f} s voiceover, "
-                              "using your Higgsfield credits. Finished shots are kept if it stops half way.\n\nContinue?"):
+                "OpenArt", f"This makes {n} AI shots of about {seconds:g} s ({what}) for a {dur:.0f} s voiceover, "
+                           "using your OpenArt credits. Finished shots are kept if it stops half way.\n\nContinue?"):
             return
         music = self.music_file if self.music_file and self.opt_music.get().startswith("Track") else None
         project = self._workdir()
         self.anim_log.delete("1.0", "end")
-        self.log(self.anim_log, f"▶ Higgsfield: {n} shots × ~{seconds:g} s for a {dur:.0f} s voiceover → {project}")
+        self.log(self.anim_log, f"▶ OpenArt: {n} shots × ~{seconds:g} s for a {dur:.0f} s voiceover → {project}")
         if self.opt_music.get() == "Generated by mood":
-            self.log(self.anim_log, "Music by mood is made by the GrowKaz kit; a Higgsfield video uses your own track or none.")
+            self.log(self.anim_log, "Music by mood is made by the GrowKaz kit; an OpenArt video uses your own track or none.")
         if self.chk_capt.get():
-            self.log(self.anim_log, "Burned-in captions are not available for Higgsfield videos (no word timestamps).")
+            self.log(self.anim_log, "Burned-in captions are not available for OpenArt videos (no word timestamps).")
         narration = self.s.get("narration") or Path(self.s["script_file"]).read_text(encoding="utf-8")
+        aspect, resolution = self.opt_aspect.get(), self.opt_res.get()
 
         def work():
             def run(cmd):
-                lines = []
-                rc = self.run_cmd(cmd, cwd=str(project), on_line=lines.append)
-                return rc, "\n".join(lines)
-            build = higgsfield_video.HiggsfieldBuild(project, ENV, ask=lambda pr: self.ask_ai(pr, box=self.anim_log),
-                                                     run=run, progress=self.prog, check=self.check_cancel,
-                                                     log=lambda text: self.log(self.anim_log, text))
+                return self._openart_run(cmd, project)
+            openart_provider.account(run, ENV)   # a clear "Sign in" error before any credit is spent
+            build = shots_video.ShotsBuild(
+                project, folder="openart",
+                make_still=lambda prompt, asp, dest: openart_provider.generate(
+                    run, ENV, "image", prompt, dest, model=image_model, aspect=asp),
+                make_clip=lambda prompt, still, asp, res, dest: openart_provider.generate(
+                    run, ENV, "video", prompt, dest, model=video_model, image=still, aspect=asp, resolution=res),
+                ask=lambda pr: self.ask_ai(pr, box=self.anim_log), run=run, progress=self.prog,
+                check=self.check_cancel, log=lambda text: self.log(self.anim_log, text))
             return build.execute(voice=self.s["voice"], duration=dur, narration=narration,
-                                 title=self.s.get("title", self.s["slug"]), aspect=self.opt_aspect.get(),
-                                 resolution=self.opt_res.get(), look=self.ent_look.get().strip(), seconds=seconds,
-                                 motion=motion, model=self._job_ai.get("animation_model", ""), music=music,
+                                 title=self.s.get("title", self.s["slug"]), aspect=aspect, resolution=resolution,
+                                 look=self.ent_look.get().strip(), seconds=seconds, motion=motion, music=music,
                                  out_name=self.s.get("title") or self.s["slug"])
-        self.run_job("Making the video (Higgsfield)", work, self._video_done)
+        self.run_job("Making the video (OpenArt)", work, self._video_done)
 
-    def _suggest_characters_higgsfield(self):
+    def _suggest_characters_openart(self):
         try:
-            self._higgsfield_ready()
+            self._openart_ready()
         except RuntimeError as e:
             messagebox.showinfo("Character styles", str(e))
             return
@@ -2225,19 +2264,22 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
                  ("Painterly", "a painterly illustrated character with visible brush strokes, muted palette and "
                                "dramatic light")]
         title, look, aspect = self.s.get("title", ""), self.ent_look.get().strip(), self.opt_aspect.get() or "16:9"
+        image_model = self._openart_models()[0]
         out_dir = self._workdir() / "char_styles"
         self.anim_log.delete("1.0", "end")
-        self.log(self.anim_log, "🎨 Asking Higgsfield for 4 character designs…")
+        self.log(self.anim_log, f"🎨 Asking OpenArt ({image_model}) for 4 character designs…")
 
         def work():
+            run = lambda cmd: self._openart_run(cmd, out_dir.parent)
+            openart_provider.account(run, ENV)
             opts = []
             for i, (name, desc) in enumerate(looks, 1):
                 self.check_cancel()
                 self.prog(0.05 + 0.9 * (i - 1) / len(looks), f"design {i}/{len(looks)}: {name}")
                 prompt = (f"Character design for a faceless YouTube video titled '{title}': {desc}. "
                           f"{look + '. ' if look else ''}Full body, plain background, no readable text, no logos.")
-                url = higgsfield_provider.text_to_image(prompt, aspect, ENV, check=self.check_cancel)
-                still = higgsfield_provider.download(url, out_dir / f"{i}.jpg")
+                still = openart_provider.generate(run, ENV, "image", prompt, out_dir / str(i), model=image_model,
+                                                  aspect=aspect)
                 self.log(self.anim_log, f"🖼 {i}. {name}: {still}")
                 opts.append((str(i), name, desc, str(still)))
             return opts
@@ -2337,8 +2379,8 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
             messagebox.showinfo("Animate", str(e))
             return
         provider = self.settings.get("animation_provider", "Claude")
-        if provider == HIGGSFIELD:
-            messagebox.showinfo("Animate", "Higgsfield has no interactive agent: the studio generates the shots "
+        if provider == OPENART:
+            messagebox.showinfo("Animate", "OpenArt has no interactive agent: the studio generates the shots "
                                            "itself. Use \"Make the video (automatic)\".")
             return
         prompt = english_prompt(prompt)
@@ -2369,8 +2411,8 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
 
     def open_project(self):
         d = STUDIO / "projects" / self.s.get("slug", "")
-        if self.s.get("slug") and not d.exists() and (WORK / self.s["slug"] / "higgsfield").exists():
-            d = WORK / self.s["slug"]   # a Higgsfield video lives in the work folder, not in the kit
+        if self.s.get("slug") and not d.exists() and (WORK / self.s["slug"] / "openart").exists():
+            d = WORK / self.s["slug"]   # an OpenArt video lives in the work folder, not in the kit
         open_path(d if self.s.get("slug") and d.exists() else STUDIO / "projects")
 
     # ================================================================== UPLOAD PAGE

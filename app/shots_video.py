@@ -1,8 +1,9 @@
-"""Build a video from Higgsfield clips: slice the voiceover into shots, ask the script AI for one
-image prompt and one camera-motion prompt per shot, generate the stills/clips, then cut them to
-the narration with FFmpeg. No GrowKaz kit, Whisper or agent is involved.
+"""Build a video from AI-generated shots: slice the voiceover into shots, ask the script AI for
+one image prompt and one camera-motion prompt per shot, generate the stills (and optionally a
+short clip from each still) with the selected provider, then cut them to the narration with
+FFmpeg. No GrowKaz kit, Whisper or agent is involved.
 
-Files are the truth here too: every still and clip is saved under <project>/higgsfield/ and a
+Files are the truth here too: every still and clip is saved under <project>/<folder>/ and a
 second run (after a failure, a cancel or an empty credit balance) reuses what already exists.
 """
 import hashlib
@@ -11,8 +12,6 @@ import math
 import re
 import shutil
 from pathlib import Path
-
-import higgsfield_provider as hf
 
 DEFAULT_CLIP_SECONDS = 6
 MIN_CLIP_SECONDS, MAX_CLIP_SECONDS = 3, 20
@@ -152,17 +151,29 @@ def concat_list(segments):
     return "".join("file '" + str(p).replace("\\", "/").replace("'", r"'\''") + "'\n" for p in segments)
 
 
-class HiggsfieldBuild:
-    """One video build. `ask(prompt)` is the script AI, `run(cmd)` runs FFmpeg and returns
-    (exit code, output), `progress(fraction, text)` and `check()` come from the GUI job."""
+def existing(folder, stem, kinds):
+    """A finished shot file from an earlier run, whatever extension the provider gave it."""
+    return next((p for p in sorted(folder.glob(stem + ".*")) if p.suffix.lower() in kinds), None)
 
-    def __init__(self, project, env, *, ask, run, progress, check, log=print):
-        self.project, self.env = Path(project), env
+
+STILL_TYPES = (".png", ".jpg", ".jpeg", ".webp")
+CLIP_TYPES = (".mp4", ".webm", ".mov")
+
+
+class ShotsBuild:
+    """One video build. The provider is two callables: make_still(prompt, aspect, dest_dir) and
+    make_clip(prompt, still, aspect, resolution, dest_dir), each returning the file it made.
+    `ask(prompt)` is the script AI, `run(cmd)` runs FFmpeg and returns (exit code, output),
+    `progress(fraction, text)` and `check()` come from the GUI job."""
+
+    def __init__(self, project, *, folder, make_still, make_clip, ask, run, progress, check, log=print):
+        self.project = Path(project)
+        self.dir = self.project / folder
+        self.make_still, self.make_clip = make_still, make_clip
         self.ask, self.run, self.progress, self.check, self.log = ask, run, progress, check, log
-        self.dir = self.project / "higgsfield"
 
     def execute(self, *, voice, duration, narration, title, aspect, resolution, look="", seconds=DEFAULT_CLIP_SECONDS,
-                motion=True, model="", music=None, out_name=None):
+                motion=True, music=None, out_name=None):
         seconds = clip_seconds(seconds)
         out_name = out_name or title or "video"
         bounds = slices(duration, seconds)
@@ -174,7 +185,7 @@ class HiggsfieldBuild:
                 saved = json.loads(plan_file.read_text(encoding="utf-8"))
                 if saved.get("key") == key and len(saved.get("shots", [])) == len(bounds):
                     plan = [tuple(s) for s in saved["shots"]]
-                    self.log(f"Reusing the shot plan and the {len(plan)} finished clips from the last run.")
+                    self.log(f"Reusing the shot plan and the finished shots from the last run.")
             except (ValueError, TypeError, KeyError):
                 plan = None
         if plan is None:
@@ -188,7 +199,7 @@ class HiggsfieldBuild:
             plan_file.write_text(json.dumps({"key": key, "voice": str(voice), "duration": duration, "seconds": seconds,
                                              "aspect": aspect, "motion": bool(motion), "shots": plan}, indent=1),
                                  encoding="utf-8")
-        self.log(f"{len(plan)} shots of ~{seconds:g}s · {'stills + DoP motion' if motion else 'stills with Ken Burns'}"
+        self.log(f"{len(plan)} shots of ~{seconds:g}s · {'stills + AI motion' if motion else 'stills with Ken Burns'}"
                  f" · {aspect} {resolution}")
         size = frame_size(aspect, resolution)
         n = len(plan)
@@ -197,21 +208,22 @@ class HiggsfieldBuild:
         seg_dir.mkdir(exist_ok=True)
         for i, ((start, end), (image_prompt, motion_prompt)) in enumerate(zip(bounds, plan), 1):
             self.check()
-            still, clip, seg = self.dir / f"shot_{i:03d}.jpg", self.dir / f"shot_{i:03d}.mp4", seg_dir / f"seg_{i:03d}.mp4"
+            stem, seg = f"shot_{i:03d}", seg_dir / f"seg_{i:03d}.mp4"
             base = 0.05 + 0.80 * (i - 1) / n
             step = 0.80 / n
-            if not still.exists():
+            still = existing(self.dir, stem, STILL_TYPES)
+            if still is None:
                 self.progress(base, f"shot {i}/{n}: still image")
-                url = hf.text_to_image(image_prompt, aspect, self.env, check=self.check,
-                                       on_status=lambda s, i=i: self.progress(None, f"shot {i}/{n}: still image ({s})"))
-                hf.download(url, still)
+                made = self.make_still(image_prompt, aspect, self.dir / (stem + "_image"))
+                still = Path(shutil.move(str(made), str(self.dir / (stem + Path(made).suffix.lower()))))
+                shutil.rmtree(self.dir / (stem + "_image"), ignore_errors=True)
                 self.log(f"🖼 shot {i}/{n}: {image_prompt[:110]}")
-            if motion and not clip.exists():
+            clip = existing(self.dir, stem, CLIP_TYPES) if motion else None
+            if motion and clip is None:
                 self.progress(base + step * 0.4, f"shot {i}/{n}: animating")
-                url = hf.image_to_video(hf.upload_file(still, self.env), motion_prompt, self.env, model=model,
-                                        check=self.check,
-                                        on_status=lambda s, i=i: self.progress(None, f"shot {i}/{n}: animating ({s})"))
-                hf.download(url, clip)
+                made = self.make_clip(motion_prompt, still, aspect, resolution, self.dir / (stem + "_video"))
+                clip = Path(shutil.move(str(made), str(self.dir / (stem + Path(made).suffix.lower()))))
+                shutil.rmtree(self.dir / (stem + "_video"), ignore_errors=True)
                 self.log(f"🎥 shot {i}/{n}: {motion_prompt[:110]}")
             self.progress(base + step * 0.85, f"shot {i}/{n}: cutting to {end - start:.1f}s")
             cmd = (ffmpeg_clip(clip, seg, end - start, size) if motion
