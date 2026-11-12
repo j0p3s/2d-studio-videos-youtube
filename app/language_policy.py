@@ -18,12 +18,26 @@ def english_voice(saved):
     return saved if saved in ENGLISH_VOICES else ENGLISH_VOICES[0]
 
 
+PIPER_ENGINE = 'Piper (offline)'
+QWEN_ENGINE = 'Qwen3 (calm, on this PC)'
+EDGE_ENGINE = 'Free (Edge)'
+
+
+def voice_engine(settings):
+    """The engine that will speak. Offline mode replaces Edge with Piper; Qwen3 also runs on this PC."""
+    saved = settings.get('engine')
+    if saved == QWEN_ENGINE:
+        return QWEN_ENGINE
+    return PIPER_ENGINE if settings.get('offline') or saved == PIPER_ENGINE else EDGE_ENGINE
+
+
 def migrate_speech_settings(settings):
     settings['voice'] = english_voice(settings.get('voice'))
     # Piper is the default engine. Settings saved before it existed always said Edge, so that
     # value only counts as the user's choice once 'piper_default' has been recorded.
-    if settings.get('engine') != 'Free (Edge)' or not settings.get('piper_default'):
-        settings['engine'] = 'Piper (offline)'
+    # Qwen3 is newer than both and is only ever saved because the user picked it.
+    if settings.get('engine') not in ('Free (Edge)', QWEN_ENGINE) or not settings.get('piper_default'):
+        settings['engine'] = PIPER_ENGINE
     settings['piper_default'] = True
     current = settings.get('current', {})
     if current.get('voice') and current.get('lang') != 'en':
