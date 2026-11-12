@@ -12,11 +12,20 @@ NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 ENGINE = "Piper (offline)"
 VOICES = ["en_US-ryan-high", "en_US-lessac-high", "en_US-hfc_female-medium", "en_US-amy-medium",
           "en_US-joe-medium", "en_GB-alan-medium"]
-DEFAULT_VOICE = VOICES[0]
+DEFAULT_VOICE = "en_US-joe-medium"
 
 
 def piper_voice(saved):
     return saved if saved in VOICES else DEFAULT_VOICE
+
+
+def migrate_voice(settings):
+    # The default voice changed from ryan-high to joe-medium. Move every installation to it once;
+    # a voice chosen after that is kept.
+    if settings.get("piper_voice_default") != DEFAULT_VOICE:
+        settings["piper_voice"] = DEFAULT_VOICE
+        settings["piper_voice_default"] = DEFAULT_VOICE
+    return settings
 
 
 def length_scale(percent):

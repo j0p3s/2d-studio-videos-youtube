@@ -128,6 +128,15 @@ class PiperVoiceTests(unittest.TestCase):
         self.assertEqual(piper_voice.piper_voice("en_GB-alan-medium"), "en_GB-alan-medium")
         self.assertFalse(piper_voice.installed(piper_voice.DEFAULT_VOICE, "no-such-folder"))
 
+    def test_joe_medium_is_the_default_and_installations_move_to_it_once(self):
+        self.assertEqual(piper_voice.DEFAULT_VOICE, "en_US-joe-medium")
+        self.assertIn(piper_voice.DEFAULT_VOICE, piper_voice.VOICES)
+        moved = piper_voice.migrate_voice({"piper_voice": "en_US-ryan-high"})
+        self.assertEqual(moved["piper_voice"], "en_US-joe-medium")
+        moved["piper_voice"] = "en_US-ryan-high"   # chosen again afterwards: kept
+        self.assertEqual(piper_voice.migrate_voice(moved)["piper_voice"], "en_US-ryan-high")
+        self.assertEqual(piper_voice.migrate_voice({})["piper_voice"], "en_US-joe-medium")
+
 
 if __name__ == "__main__":
     unittest.main()

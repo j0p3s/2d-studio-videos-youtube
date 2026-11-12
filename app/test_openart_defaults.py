@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from openart_defaults import migrate_defaults, build_options, RETENTION_BRIEF
+from openart_defaults import migrate_defaults, build_options, RETENTION_BRIEF, DEFAULT_RESOLUTION
 from shots_video import plan_key, slices, ffmpeg_still, ShotsBuild
 from studio_gui import Studio, scriptforge_prompt
 
@@ -62,11 +62,11 @@ class EconomyDefaultsTests(unittest.TestCase):
                                ask=lambda _: json.dumps([{"image": "scene", "motion": "pan"}] * 40),
                                run=run, progress=lambda *a: None, check=lambda: None, log=lambda _: None)
             args = dict(voice=voice, duration=480, narration="story", title="test", aspect="16:9",
-                        resolution="1080p", seconds=options["seconds"], motion=options["motion"],
+                        resolution=DEFAULT_RESOLUTION, seconds=options["seconds"], motion=options["motion"],
                         parallel=options["parallel"], reframe=options["economy"])
             build.execute(**args)
             self.assertEqual(len(images), 40)
-            self.assertIn("1920x1080", commands[0][commands[0].index("-vf") + 1])
+            self.assertIn("1280x720", commands[0][commands[0].index("-vf") + 1])
             self.assertIn("sin(2*PI", commands[0][commands[0].index("-vf") + 1])
             self.assertNotIn("floor(", commands[0][commands[0].index("-vf") + 1])
             build.execute(**args)
@@ -86,7 +86,7 @@ class EconomyDefaultsTests(unittest.TestCase):
                     chk_capt=Mock(get=lambda: False), music_file=None, anim_log=Mock(), ent_look=Mock(),
                     log=Mock(), ask_ai=Mock(), prog=Mock(), check_cancel=Mock(), _openart_run=Mock(),
                     _video_done=Mock())
-                app.opt_res.get.return_value = "1080p"
+                app.opt_res.get.return_value = "720p"
                 app.ent_look.get.return_value = "cinematic"
                 app.run_job = lambda label, work, done: work()
                 with patch("studio_gui.messagebox.askyesno", return_value=True), \
@@ -95,9 +95,9 @@ class EconomyDefaultsTests(unittest.TestCase):
                     Studio._make_video_openart(app)
                 args = build.return_value.execute.call_args.kwargs
                 self.assertEqual((args["motion"], args["seconds"], args["parallel"], args["resolution"]),
-                                 (False, 12, 3, "1080p"))
+                                 (False, 12, 3, "720p"))
                 self.assertTrue(args["reframe"])
-                app.opt_res.set.assert_called_once_with("1080p")
+                app.opt_res.set.assert_called_once_with("720p")
 
     def test_retention_brief_is_added_to_script_and_visual_direction(self):
         self.assertIn(RETENTION_BRIEF, scriptforge_prompt())
