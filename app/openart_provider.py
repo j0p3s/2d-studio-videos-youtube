@@ -158,6 +158,10 @@ def generate(run, env, kind, prompt, out_dir, *, model, image=None, aspect=None,
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     model = (model or "").strip() or (DEFAULT_IMAGE_MODEL if kind == "image" else DEFAULT_VIDEO_MODEL)
+    # Kling Omni uses quality tiers rather than pixel heights. Keep the project's
+    # output resolution unchanged; shots_video still scales the final frames.
+    if kind == "video" and model == "kling-3-omni":
+        resolution = {"720p": "std", "1080p": "pro", "2160p": "4k"}.get(resolution, resolution)
     base = command(env, "generate", kind, prompt, "--model", model, "--json", "-o", str(out_dir))
     if image:
         base += ["--image", str(image)]
@@ -188,6 +192,9 @@ def generate(run, env, kind, prompt, out_dir, *, model, image=None, aspect=None,
 
 def _rejected_flag(output, flag):
     low = (output or "").lower()
+    # Model schema errors name the field without the leading dashes.
+    if re.search(rf"\b{re.escape(flag.removeprefix('--'))}:\s*invalid option\b", low):
+        return True
     return flag in low and any(word in low for word in ("unknown flag", "unknown shorthand", "not defined",
                                                         "unrecognized", "unsupported", "does not accept",
                                                         "not supported", "invalid argument"))

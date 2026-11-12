@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import tempfile
 import unittest
 import zipfile
@@ -44,10 +45,11 @@ class ProviderTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.tools = Path(self.tmp.name) / ".tools"
         self.tools.mkdir()
-        self.exe = self.tools / "openart"
+        self.exe = self.tools / ("openart.exe" if os.name == "nt" else "openart")
         self.exe.write_text("#!/bin/sh\n")
         self.exe.chmod(0o755)
         self.env = {"PATH": str(self.tools), "LOCALAPPDATA": str(Path(self.tmp.name) / "local")}
+        self.exe = Path(oa.executable(self.env))  # Windows PATHEXT may uppercase .EXE
         self.cli = FakeCLI()
 
     def tearDown(self):
@@ -87,6 +89,30 @@ class ProviderTests(unittest.TestCase):
         self.cli.fail_flags = {"--model"}   # a real error is not retried
         with self.assertRaisesRegex(RuntimeError, "OpenArt CLI failed .*generate image, model m"):
             oa.generate(self.cli, self.env, "image", "x", Path(self.tmp.name) / "b", model="m")
+
+    def test_kling_omni_pixel_resolutions_use_quality_tiers(self):
+        for resolution, tier in (("720p", "std"), ("1080p", "pro"), ("2160p", "4k"),
+                                 ("std", "std"), ("pro", "pro"), ("4k", "4k")):
+            with self.subTest(resolution=resolution):
+                oa.generate(self.cli, self.env, "video", "x", Path(self.tmp.name) / resolution,
+                            model="kling-3-omni", resolution=resolution)
+                cmd = self.cli.calls[-1]
+                self.assertEqual(cmd[cmd.index("--resolution") + 1], tier)
+
+    def test_model_validation_error_retries_only_the_rejected_optional_field(self):
+        def run(cmd):
+            if "--resolution" in cmd:
+                self.cli.calls.append(cmd)
+                return 1, 'error: resolution: Invalid option: expected one of "std"|"pro"|"4k"'
+            return self.cli(cmd)
+
+        oa.generate(run, self.env, "video", "x", Path(self.tmp.name) / "retry",
+                    model="another-model", resolution="1080p", aspect="16:9")
+        self.assertEqual(len(self.cli.calls), 2)
+        self.assertIn("1080p", self.cli.calls[0])
+        self.assertNotIn("--resolution", self.cli.calls[-1])
+        self.assertIn("--aspect-ratio", self.cli.calls[-1])
+        self.assertFalse(oa._rejected_flag('error: prompt: Invalid option', "--resolution"))
 
     def test_sign_in_and_credit_problems_are_explained(self):
         self.assertEqual(oa.account(self.cli, self.env)["credits"], 1234)
