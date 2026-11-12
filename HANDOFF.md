@@ -1,4 +1,4 @@
-# HANDOFF — 2D Animation Studio (2026-11-12, 720p / joe-medium defaults and thumbnail fixes)
+# HANDOFF — 2D Animation Studio (2026-11-12, Gemini key cleanup after the 720p / joe-medium update)
 
 ## 1. Goal
 - Portable Windows studio: ideas → script → narration → GrowKaz animation or OpenArt shots → thumbnail → explicit YouTube upload.
@@ -6,6 +6,12 @@
 - It must keep working with no AI credits: local AI through Ollama and a local Piper voice.
 
 ## 2. Current status
+- **Gemini API key check (2026-11-12, user request, local files only, no code change):** the user pasted their Gemini key and asked that the project not show it. Result: the key is in no tracked file and in no commit on any ref of the public repository (all refs fetched, history searched with `git log --all -S`). On this PC it was in three git-ignored places:
+  - `.env` (root): kept. This is the only file the studio reads (`load_env_file(HOME / ".env", ENV)`), and now the only copy in this folder. It holds `GEMINI_API_KEY`, `GEMINI_MODEL` and `GEMINI_CLI_TRUST_WORKSPACE`.
+  - `.tools/.env`: deleted at the user's request. It held the same three setting names; the values were not compared with the root file before deletion.
+  - `.tools/node_modules/@google/gemini-cli/bundle/gemini-Q2FNZWQG.js`: the key was hard-coded as the first line (`process.env.GEMINI_API_KEY = "…"`). That line was removed. The next line, `process.env.GEMINI_MODEL = "gemini-flash-latest"`, is still hard-coded there and overrides the model the studio passes; it was left because it is not a secret. Who added these lines is unknown. Reinstalling the Gemini CLI replaces this file.
+  - Checked: the CLI still starts (`--version` prints 0.68.0). Not checked: a real Gemini request from the GUI after these edits.
+  - The key was pasted into the chat, so it is in that session's transcript on this PC. The user was advised to create a new key in Google AI Studio, delete the old one and put the new one in `.env`; whether they did is unknown.
 - Defaults and thumbnail fixes (PR #37, 2026-11-12, user requests): **81 Python tests and 3 Node encoder tests passed on Windows.** Not checked in the GUI: a real Auto run, a thumbnail made after these fixes, a voiceover with the new default voice.
   - **720p is the default resolution** (`DEFAULT_RESOLUTION` in `app/openart_defaults.py`): the Animate menu starts there and Save credits builds force it (previously 1080p). Higher resolutions need Save credits off. Mentions of 1080p saving output further down are history.
   - **`en_US-joe-medium` is the default Piper voice** (63 MB; was `en_US-ryan-high`). `piper_voice.migrate_voice` moves every installation to it once and records `piper_voice_default`; a voice chosen afterwards is kept. The installer pre-downloads joe-medium. Both voice files are in this checkout's `.cache/piper`.
@@ -103,7 +109,7 @@
 - Local-only, gitignored: `plugin/`, the niche-prompt PDF, `.env`, `settings.json`, `youtube/`, `work/`, `growkaz-stickman-studio/`, `.claude/`, `.codex/`, `.runtime/`, `.cache/`, `.tools/`, `.venv/`.
 
 ## 6. Next steps
-1. Latest requests on 2026-11-12 (thumbnail square, 720p and joe-medium defaults, thumbnail preview error, untrack the Android folder, update this handoff) are done in PRs #36 and #37; the user asked for both to be merged. Ask the user to restart the GUI, pull `main`, and press Auto again on the project whose thumbnail step failed; then wait for the next request.
+1. Latest requests on 2026-11-12 (thumbnail square, 720p and joe-medium defaults, thumbnail preview error, untrack the Android folder, update this handoff) are done in PRs #36 and #37; the user asked for both to be merged. Ask the user to restart the GUI, pull `main`, and press Auto again on the project whose thumbnail step failed; then wait for the next request. After that, the Gemini key check above was done and this handoff updated (PR for this file only); nothing else is pending.
 2. On the next user-authorized live OpenArt test, confirm their installation has been updated/restarted, saving mode is enabled and offline mode is off. Prefer a new short project to exercise image-only defaults without inheriting an old paid-clip plan. Check 720p output, local reframing, shot order and narration duration; observe account limits with concurrency 3 and reduce if necessary.
 3. Separately verify Continue on the user's existing project after the Kling fix. Do not start extra paid generations just to confirm documentation. A clip-mode test requires saving mode off (or a retained compatible clip plan).
 4. Remaining CLI assumptions to check on a live run: timeout formats `5m`/`20m`, image aspect support, JSON output shape and `-o` downloaded media extensions. `result_url` recursively handles recognized URL fields; real credit/account behavior is not mocked evidence.
@@ -122,6 +128,7 @@
 - Run the installer non-interactively by full path with stdin redirected, through PowerShell (`cmd //c` fails from Git Bash); its last `choice` prompt then errors harmlessly.
 - A Gemini API script request blocks until it returns (no streaming, no progress, Cancel does not interrupt it).
 - Choosing a voice engine changes the setting in memory; it is written to `settings.json` by the next action that saves settings.
+- If Gemini (CLI) ignores the model chosen in the studio, look at the hard-coded `GEMINI_MODEL` line at the top of the Gemini CLI bundle in `.tools` (see section 2).
 - GUI instances keep old code until restarted. Never print API keys, OAuth tokens or provider auth files, and never commit runtime data.
 - Logs: start with `studio.log` (or Show logs). Agent detail: Codex `.codex/sessions/**/*.jsonl`, Claude `.claude/projects/`. Quiet logs can mean thinking or rendering.
 - Untested: Intel/AMD encoders, a mid-render GPU failure, a real upload with the offline switch on.
