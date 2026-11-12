@@ -249,8 +249,8 @@ class Studio(ctk.CTk):
         ctk.set_default_color_theme("green")
         readable_theme()
         self.title("2D Animation Studio")
-        self.geometry("1240x800")
-        self.minsize(1050, 680)
+        self.geometry("1280x820")
+        self.minsize(1200, 720)
         self.configure(fg_color="#0b0d10")
 
         self.q = queue.Queue()
@@ -276,7 +276,12 @@ class Studio(ctk.CTk):
                               ("upload", self._page_upload)]:
             f = ctk.CTkFrame(container, fg_color="transparent")
             f.grid(row=0, column=0, sticky="nsew")
-            builder(f)
+            if name == "setup":      # the longest page: it scrolls, so nothing is cut off in a short window
+                inner = ctk.CTkScrollableFrame(f, fg_color="transparent")
+                inner.pack(fill="both", expand=True)
+                builder(inner)
+            else:
+                builder(f)
             self.pages[name] = f
         self._build_statusbar()
         self.show("setup" if not self.s else "script")
@@ -963,8 +968,6 @@ class Studio(ctk.CTk):
         # A name that is not downloaded yet is allowed here: "Download offline model" fetches it.
         self.ent_ollama = self._model_box(row_off, "ollama_model", 240, lambda: OLLAMA, may_be_missing=True)
         self.ent_ollama.pack(side="left", padx=6)
-        ctk.CTkButton(row_off, text="Install Ollama", command=self.install_ollama).pack(side="left", padx=4)
-        ctk.CTkButton(row_off, text="Download offline model", command=self.download_ollama_model).pack(side="left", padx=4)
         row_oa = ctk.CTkFrame(ai, fg_color="transparent")
         row_oa.pack(fill="x", padx=12, pady=5)
         ctk.CTkLabel(row_oa, text="OpenArt (AI shots)", width=200, anchor="w").pack(side="left")
@@ -987,9 +990,7 @@ class Studio(ctk.CTk):
         for key, kind in (("openart_image_model", "image"), ("openart_video_model", "video")):
             ctk.CTkLabel(row_oam, text=kind.capitalize()).pack(side="left", padx=(6, 0))
             self._model_box(row_oam, key, 230, lambda: OPENART, kind=kind).pack(side="left", padx=6)
-        ctk.CTkButton(row_oam, text="Refresh model lists", fg_color="#1d222b", hover_color="#272d38",
-                      command=self._load_models).pack(side="left", padx=10)
-        self.lbl_models = ctk.CTkLabel(ai, text="", text_color=MUTED, anchor="w", justify="left", wraplength=900)
+        self.lbl_models = ctk.CTkLabel(ai, text="", text_color=MUTED, anchor="w", justify="left", wraplength=820)
         self.lbl_models.pack(fill="x", padx=14, pady=(0, 2))
         self._load_models()
         row_parallel = ctk.CTkFrame(ai, fg_color="transparent")
@@ -1014,12 +1015,16 @@ class Studio(ctk.CTk):
         self._openart_economy_controls()
         buttons_ai = ctk.CTkFrame(ai, fg_color="transparent")
         buttons_ai.pack(fill="x", padx=12, pady=6)
+        tools = []
         for provider in ("OpenAI (Codex)", "Gemini"):
-            ctk.CTkButton(buttons_ai, text=f"Install {provider}", command=lambda v=provider: self.install_ai(v)).pack(side="left", padx=4)
-            ctk.CTkButton(buttons_ai, text=f"Sign in: {provider}", command=lambda v=provider: self.login_ai(v)).pack(side="left", padx=4)
-        for txt, cmd in [("Install OpenArt", self.install_openart), ("Sign in: OpenArt", self.login_openart),
-                         ("Check OpenArt account", self.check_openart)]:
-            ctk.CTkButton(buttons_ai, text=txt, command=cmd).pack(side="left", padx=4)
+            tools += [(f"Install {provider}", lambda v=provider: self.install_ai(v)),
+                      (f"Sign in: {provider}", lambda v=provider: self.login_ai(v))]
+        tools += [("Install OpenArt", self.install_openart), ("Sign in: OpenArt", self.login_openart),
+                  ("Check OpenArt account", self.check_openart), ("Install Ollama", self.install_ollama),
+                  ("Download offline model", self.download_ollama_model), ("Install Qwen3 voice", self.install_qwen),
+                  ("Refresh model lists", self._load_models)]
+        for i, (txt, cmd) in enumerate(tools):      # 4 per row, so no button is cut off in a narrow window
+            ctk.CTkButton(buttons_ai, text=txt, width=190, command=cmd).grid(row=i // 4, column=i % 4, padx=4, pady=3)
         c = self.card(p)
         self.checks_frame = ctk.CTkFrame(c, fg_color="transparent")
         self.checks_frame.pack(fill="x", padx=16, pady=14)
@@ -1029,7 +1034,7 @@ class Studio(ctk.CTk):
                          ("🔑 Log in to Claude", self.claude_login), ("🧪 Self-test render", self.self_test),
                          ("📦 Re-run installer", self.rerun_installer)]:
             ctk.CTkButton(row, text=txt, height=38, command=cmd).pack(side="left", padx=(0, 8))
-        self.setup_log = self.logbox(p, 300)
+        self.setup_log = self.logbox(p, 200)
         self.setup_log.pack(fill="both", expand=True, pady=(8, 0))
 
     # ---- model dropdowns: filled from each provider's own model list, and checked against it
@@ -1194,6 +1199,18 @@ class Studio(ctk.CTk):
                 raise RuntimeError(f"Ollama was not installed (winget exit {rc}). Install it from ollama.com instead.")
         self.run_job("Installing Ollama", work, lambda _: self.check_setup(), indeterminate=True)
 
+    def install_qwen(self):
+        if qwen_voice.installed(HOME):
+            messagebox.showinfo("Qwen3-TTS", "Qwen3-TTS is already installed. Choose it on the Voiceover page.")
+            return
+        if not messagebox.askyesno("Qwen3-TTS", f"Download and install the Qwen3 voice ({qwen_voice.DOWNLOAD_NOTE})?\n\n"
+                                   "It goes into the studio folder and needs an NVIDIA graphics card to be fast. "
+                                   "A stopped install continues where it ended."):
+            return
+        self.run_job("Installing Qwen3-TTS",
+                     lambda: qwen_voice.install(HOME, PY, self.run_cmd, lambda frac, note: self.prog(frac, note)),
+                     lambda _: self.check_setup())
+
     def download_ollama_model(self):
         model = self.ent_ollama.get().strip() or ENV.get("OLLAMA_MODEL") or ollama_provider.DEFAULT_MODEL
         if not messagebox.askyesno("Download offline model", f"Download the Ollama model \"{model}\"?\n\n"
@@ -1228,7 +1245,8 @@ class Studio(ctk.CTk):
         voice = piper_voice.piper_voice(self.settings.get("piper_voice"))
         return [("Ollama + offline model (optional)", ollama),
                 ("Whisper model (offline timestamps)", "downloaded" if whisper else None),
-                ("Piper voice (offline)", voice if piper_voice.installed(voice, PIPER_DIR) else None)]
+                ("Piper voice (offline)", voice if piper_voice.installed(voice, PIPER_DIR) else None),
+                ("Qwen3 voice (optional)", "installed" if qwen_voice.installed(HOME) else None)]
 
     def check_setup(self):
         n_checks = {"i": 0}
@@ -1285,9 +1303,9 @@ class Studio(ctk.CTk):
                              text_color=(ACCENT if good else "#ef4444"),
                              font=ctk.CTkFont(size=16)).grid(row=r, column=col * 3, sticky="w", pady=3)
                 ctk.CTkLabel(self.checks_frame, text=name, font=ctk.CTkFont(size=14, weight="bold"),
-                             anchor="w", width=290).grid(row=r, column=col * 3 + 1, sticky="w")
-                ctk.CTkLabel(self.checks_frame, text=(val or "missing")[:28], text_color=MUTED,
-                             anchor="w", width=200).grid(row=r, column=col * 3 + 2, sticky="w")
+                             anchor="w", width=250).grid(row=r, column=col * 3 + 1, sticky="w")
+                ctk.CTkLabel(self.checks_frame, text=(val or "missing")[:22], text_color=MUTED,
+                             anchor="w", width=160).grid(row=r, column=col * 3 + 2, sticky="w")
         self.run_job("Checking tools", work, show)
 
     def doctor_fix(self):
@@ -1431,7 +1449,8 @@ class Studio(ctk.CTk):
                                                       "8 min", "10 min", "12 min"], width=110)
         self.opt_len.set("3-4 min")
         self.opt_len.grid(row=0, column=4, padx=8)
-        ctk.CTkButton(top, text="✨ Get 10 ideas", height=36, command=self.get_ideas).grid(row=0, column=6, padx=16)
+        ctk.CTkButton(top, text="✨ Get 10 ideas", height=36, command=self.get_ideas).grid(row=1, column=0, columnspan=7, sticky="w",
+                                                                                          padx=16, pady=(0, 14))
 
         body = ctk.CTkFrame(p, fg_color="transparent")
         body.pack(fill="both", expand=True, pady=(6, 0))
@@ -1700,9 +1719,11 @@ class Studio(ctk.CTk):
         self.sld_rate.grid(row=0, column=3)
         self.lbl_rate = ctk.CTkLabel(c, text=f"{int(self.sld_rate.get()):+d}%", width=50)
         self.lbl_rate.grid(row=0, column=4)
-        ctk.CTkButton(c, text="🎙 Generate voiceover", height=36, command=self.make_voice).grid(row=0, column=5, padx=12)
-        ctk.CTkButton(c, text="📂 English recording…", height=36, fg_color="#1d222b", hover_color="#272d38",
-                      command=self.pick_voice).grid(row=0, column=6, padx=(0, 16))
+        actions = ctk.CTkFrame(c, fg_color="transparent")   # own row: beside the slider they were cut off
+        actions.grid(row=1, column=0, columnspan=5, sticky="w", padx=16, pady=(0, 14))
+        ctk.CTkButton(actions, text="🎙 Generate voiceover", height=36, command=self.make_voice).pack(side="left")
+        ctk.CTkButton(actions, text="📂 English recording…", height=36, fg_color="#1d222b", hover_color="#272d38",
+                      command=self.pick_voice).pack(side="left", padx=12)
 
         ctk.CTkLabel(p, text="Narration text (exactly what is spoken — edit freely)",
                      font=ctk.CTkFont(size=15, weight="bold")).pack(anchor="w", pady=(10, 4))
@@ -1711,10 +1732,10 @@ class Studio(ctk.CTk):
         bot = ctk.CTkFrame(p, fg_color="transparent")
         bot.pack(fill="x", pady=10)
         self.lbl_voice = ctk.CTkLabel(bot, text="No voiceover yet", text_color=MUTED)
-        self.lbl_voice.pack(side="left")
         ctk.CTkButton(bot, text="Next: Animate →", width=150, command=lambda: self.show("animate")).pack(side="right")
         ctk.CTkButton(bot, text="▶ Play", width=90, fg_color="#1d222b", hover_color="#272d38",
                       command=lambda: self.s.get("voice") and open_path(self.s["voice"])).pack(side="right", padx=8)
+        self.lbl_voice.pack(side="left")   # packed last, so a long file path is shortened instead of the buttons
         self._on_engine(self.settings.get("engine", piper_voice.ENGINE))
 
     def _on_engine(self, v):
@@ -1727,7 +1748,7 @@ class Studio(ctk.CTk):
         self.settings["piper_voice" if shown in piper_voice.VOICES else
                       "qwen_voice" if shown in qwen_voice.VOICES else "voice"] = shown
         if engine == qwen_voice.ENGINE:
-            self.qwen_frame.grid(row=0, column=2, padx=(0, 16))
+            self.qwen_frame.grid(row=1, column=0, columnspan=3, sticky="w", padx=16, pady=(0, 12))
             self.lbl_qwen.configure(text="" if qwen_voice.installed(HOME) else
                                     f"not installed yet ({qwen_voice.DOWNLOAD_NOTE})")
             self.opt_voice.configure(state="normal", values=qwen_voice.VOICES)
@@ -2081,7 +2102,7 @@ class Studio(ctk.CTk):
         self.opt_res.set(DEFAULT_RESOLUTION)
         self.opt_res.grid(row=1, column=3, sticky="w", padx=(0, 18))
         lab("Style", 1, 4)
-        self.opt_style = ctk.CTkOptionMenu(g, values=list(STYLES), width=170)
+        self.opt_style = ctk.CTkOptionMenu(g, values=list(STYLES), width=150)
         self.opt_style.grid(row=1, column=5, sticky="w", padx=(0, 18))
         lab("Music", 2, 0)
         self.opt_music = ctk.CTkOptionMenu(g, values=["Generated by mood", "My own track…", "None"], width=170,
@@ -2093,16 +2114,16 @@ class Studio(ctk.CTk):
         self.chk_capt = ctk.CTkCheckBox(g, text="Burned-in captions")
         self.chk_capt.grid(row=2, column=4, sticky="w")
         self.chk_auto = ctk.CTkCheckBox(g, text="Full auto (Claude/Gemini only)")
-        self.chk_auto.grid(row=2, column=5, columnspan=3, sticky="w")
+        self.chk_auto.grid(row=9, column=4, columnspan=3, pady=(8, 0), sticky="w")
         lab("Parts", 3, 0)
         self.opt_parts = ctk.CTkOptionMenu(g, values=["Auto", "1", "2", "3", "4", "5", "6"], width=90)
         self.opt_parts.set("Auto")
         self.opt_parts.grid(row=3, column=1, sticky="w")
         lab("Look notes", 3, 2)
-        self.ent_look = ctk.CTkEntry(g, width=420, placeholder_text="optional: e.g. 'detailed human characters, warm colours'")
+        self.ent_look = ctk.CTkEntry(g, width=380, placeholder_text="optional: e.g. 'detailed human characters, warm colours'")
         self.ent_look.grid(row=3, column=3, columnspan=3, sticky="w")
         ctk.CTkButton(g, text="🎨 Suggest character styles", width=190, fg_color="#1d222b", hover_color="#272d38",
-                      command=self.suggest_characters).grid(row=3, column=6, padx=(10, 0), sticky="w")
+                      command=self.suggest_characters).grid(row=9, column=0, columnspan=4, pady=(8, 0), sticky="w")
         ctk.CTkLabel(g, text="Parts: long videos are built in several AI passes (Auto = one part per ~2.5 min), "
                              "like splitting the script in the tutorial — then rendered as one final MP4.",
                      text_color=MUTED, font=ctk.CTkFont(size=14)).grid(row=4, column=0, columnspan=8, sticky="w", pady=(4, 0))
@@ -2642,10 +2663,10 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
         field("Video file")
         r = ctk.CTkFrame(left, fg_color="transparent")
         r.pack(fill="x", padx=14)
-        self.ent_video = ctk.CTkEntry(r)
+        self.ent_video = ctk.CTkEntry(r, width=80)   # grows to fill; a small request keeps the buttons whole
         self.ent_video.pack(side="left", fill="x", expand=True)
         ctk.CTkButton(r, text="Browse", width=80, command=lambda: self._browse(self.ent_video, [("Video", "*.mp4 *.mov *.webm")])).pack(side="left", padx=6)
-        ctk.CTkButton(r, text="Latest render", width=110, fg_color="#1d222b", hover_color="#272d38",
+        ctk.CTkButton(r, text="Latest render", width=130, fg_color="#1d222b", hover_color="#272d38",
                       command=lambda: self._set(self.ent_video, self._latest_mp4() or "")).pack(side="left")
         field("Title (max 100)")
         self.ent_title = ctk.CTkEntry(left)
@@ -2677,9 +2698,9 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
         r4.pack(fill="x", padx=14, pady=(10, 14))
         self.btn_publish = ctk.CTkButton(r4, text="🚀 Publish to YouTube", height=42,
                                          font=ctk.CTkFont(size=15, weight="bold"), command=self.upload)
-        self.btn_publish.pack(side="left")
-        ctk.CTkButton(r4, text="🔗 YouTube setup", height=42, fg_color="#1d222b", hover_color="#272d38",
-                      command=self.youtube_setup).pack(side="left", padx=8)
+        self.btn_publish.pack(anchor="w")
+        ctk.CTkButton(r4, text="🔗 YouTube setup", height=36, fg_color="#1d222b", hover_color="#272d38",
+                      command=self.youtube_setup).pack(anchor="w", pady=(8, 0))
         self.lbl_up = ctk.CTkLabel(left, text="", text_color=ACCENT)
         self.lbl_up.pack(anchor="w", padx=14, pady=(0, 10))
 
