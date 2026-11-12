@@ -975,7 +975,7 @@ class Studio(ctk.CTk):
             self.sw_oa_economy.select()
         self.sw_oa_economy.pack(side="left")
         ctk.CTkLabel(row_economy, wraplength=420, justify="left",
-                    text="1080p stills + local motion; 12s long / 6s Shorts; existing plans resume"
+                    text="1080p stills + smooth camera motion; 12s long / 6s Shorts; existing plans resume"
                     ).pack(side="left", padx=12)
         self._openart_economy_controls()
         buttons_ai = ctk.CTkFrame(ai, fg_color="transparent")

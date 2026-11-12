@@ -191,12 +191,13 @@ class VideoBuildTests(unittest.TestCase):
             sv.parse_plan('[{"n": 1}]', 1)
 
     def test_ffmpeg_commands_cut_every_shot_to_its_length(self):
-        clip = sv.ffmpeg_clip("c.mp4", "s.mp4", 5.5, (1920, 1080))
-        self.assertIn("tpad=stop_mode=clone:stop_duration=5.500", clip[clip.index("-vf") + 1])
-        self.assertEqual(clip[clip.index("-t") + 1], "5.500")
+        clip = sv.ffmpeg_clip("c.mp4", "s.mp4", 5.5, (1920, 1080), source_duration=4)
+        self.assertIn("setpts=1.375000000", clip[clip.index("-vf") + 1])
+        self.assertNotIn("tpad", " ".join(clip))
+        self.assertEqual(clip[clip.index("-frames:v") + 1], "132")
         still = sv.ffmpeg_still("a.jpg", "s.mp4", 2, (1080, 1920))
         self.assertEqual(still[still.index("-frames:v") + 1], "48")
-        self.assertIn("zoompan=z='min(1+0.0010*on,1.25)'", still[still.index("-vf") + 1])
+        self.assertIn("zoompan=z='1.04+0.14*on/47'", still[still.index("-vf") + 1])
         mux = sv.ffmpeg_mux("v.mp4", "voice.mp3", "out.mp4", music="song.mp3")
         self.assertIn("amix=inputs=2:duration=first", mux[mux.index("-filter_complex") + 1])
         self.assertNotIn("-filter_complex", sv.ffmpeg_mux("v.mp4", "voice.mp3", "out.mp4"))
@@ -224,6 +225,8 @@ class VideoBuildTests(unittest.TestCase):
             return '[{"n":1,"image":"img one","motion":"pan"},{"n":2,"image":"img two","motion":"orbit"}]'
 
         def run(cmd):
+            if cmd[0] == "ffprobe":
+                return 0, '{"streams":[{"duration":"4.0"}]}'
             calls["run"].append(cmd)
             Path(cmd[-1]).write_bytes(b"mp4")
             return 0, ""
@@ -241,7 +244,7 @@ class VideoBuildTests(unittest.TestCase):
             self.assertEqual(sorted(p.name for p in (Path(tmp) / "proj" / "openart").iterdir()),
                              ["plan.json", "segments", "shot_001.mp4", "shot_001.png", "shot_002.mp4", "shot_002.png",
                               "video_silent.mp4"])
-            self.assertEqual([c[0] for c in calls["run"]], ["ffmpeg"] * 4)   # 2 cuts, concat, mux
+            self.assertEqual([c[0] for c in calls["run"]], ["ffmpeg"] * 7)   # 2 cuts, 2 cores, blend, concat, mux
             self.assertIn("-stream_loop", calls["run"][-1])
             # Same voiceover again (after a stop or an empty balance): nothing is generated twice.
             build.execute(**common)
@@ -249,7 +252,7 @@ class VideoBuildTests(unittest.TestCase):
             # A different shot length is a new plan.
             build.execute(**dict(common, seconds=3, motion=False))
             self.assertEqual((calls["ask"], len(calls["image"]), len(calls["video"])), (2, 6, 2))
-            self.assertIn("zoompan", " ".join(calls["run"][-3]))   # last cut before concat and mux
+            self.assertTrue(any("zoompan" in " ".join(c) for c in calls["run"]))
 
 
 if __name__ == "__main__":
