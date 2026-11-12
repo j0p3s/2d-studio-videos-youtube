@@ -21,6 +21,7 @@ from ai_providers import PROVIDERS, TEXT_PROVIDERS, cli_command, run_agent, port
 from host_render import HostAnimation
 import openart_provider
 import shots_video
+from parallel_commands import CommandGroup
 from openart_provider import OPENART
 import session_log
 import piper_voice
@@ -221,6 +222,7 @@ class Studio(ctk.CTk):
         self.q = queue.Queue()
         self.report_callback_exception = lambda *err: session_log.error("Error in the window", err[1], err[2])
         self.proc = None
+        self._openart_commands = CommandGroup(ENV, creationflags=NO_WINDOW, log=session_log.write)
         self.busy = False
         self.settings = migrate_speech_settings(load_settings())
         self.s = self.settings.get("current", {})   # current video state
@@ -533,6 +535,7 @@ class Studio(ctk.CTk):
 
     def stop_job(self):
         self._cancel = True
+        self._openart_commands.stop()
         if self.proc and self.proc.poll() is None:
             subprocess.run(["taskkill", "/PID", str(self.proc.pid), "/T", "/F"], capture_output=True,
                            creationflags=NO_WINDOW)
@@ -950,6 +953,15 @@ class Studio(ctk.CTk):
             entry.bind("<FocusOut>", self._save_openart)
             entry.bind("<Return>", self._save_openart)
             self.ent_oa[key] = entry
+        row_parallel = ctk.CTkFrame(ai, fg_color="transparent")
+        row_parallel.pack(fill="x", padx=12, pady=5)
+        ctk.CTkLabel(row_parallel, text="OpenArt parallel shots", width=200, anchor="w").pack(side="left")
+        self.opt_oa_parallel = ctk.CTkOptionMenu(
+            row_parallel, values=[str(i) for i in range(1, shots_video.MAX_PARALLEL_SHOTS + 1)],
+            width=90, command=self._save_openart)
+        self.opt_oa_parallel.set(str(shots_video.parallel_shots(self.settings.get("openart_parallel_shots"))))
+        self.opt_oa_parallel.pack(side="left", padx=6)
+        ctk.CTkLabel(row_parallel, text="Simultaneous scenes (1 = sequential; default 3)").pack(side="left", padx=6)
         buttons_ai = ctk.CTkFrame(ai, fg_color="transparent")
         buttons_ai.pack(fill="x", padx=12, pady=6)
         for provider in ("OpenAI (Codex)", "Gemini"):
@@ -972,6 +984,7 @@ class Studio(ctk.CTk):
 
     def _save_openart(self, event=None):
         self.settings["openart_motion"] = OA_MODES.get(self.opt_oa_mode.get(), True)
+        self.settings["openart_parallel_shots"] = shots_video.parallel_shots(self.opt_oa_parallel.get())
         for key, entry in self.ent_oa.items():
             value = entry.get().strip()
             if key == "openart_clip_seconds":
@@ -980,10 +993,8 @@ class Studio(ctk.CTk):
         save_settings(self.settings)
 
     def _openart_run(self, cmd, cwd=None):
-        """Run one OpenArt CLI command through the job runner (Stop kills it). Returns (exit code, output)."""
-        lines = []
-        rc = self.run_cmd(cmd, cwd=str(cwd or HOME), on_line=lines.append)
-        return rc, "\n".join(lines)
+        """Each concurrent command has its own process/output; Stop kills all of them."""
+        return self._openart_commands.run(cmd, cwd or HOME, check=self.check_cancel)
 
     def install_openart(self):
         """The release binary goes into the studio's .tools folder (already on PATH); no installer script,
@@ -2213,6 +2224,7 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
             return
         seconds = shots_video.clip_seconds(self.settings.get("openart_clip_seconds"))
         motion = bool(self.settings.get("openart_motion", True))
+        parallel = shots_video.parallel_shots(self.settings.get("openart_parallel_shots"))
         image_model, video_model = self._openart_models()
         n = len(shots_video.slices(dur, seconds))
         what = (f"one {image_model} still and one {video_model} clip each" if motion
@@ -2247,7 +2259,7 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
             return build.execute(voice=self.s["voice"], duration=dur, narration=narration,
                                  title=self.s.get("title", self.s["slug"]), aspect=aspect, resolution=resolution,
                                  look=self.ent_look.get().strip(), seconds=seconds, motion=motion, music=music,
-                                 out_name=self.s.get("title") or self.s["slug"])
+                                 out_name=self.s.get("title") or self.s["slug"], parallel=parallel)
         self.run_job("Making the video (OpenArt)", work, self._video_done)
 
     def _suggest_characters_openart(self):
