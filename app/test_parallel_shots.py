@@ -20,6 +20,8 @@ class ParallelShotsTests(unittest.TestCase):
         self.commands, self.progress = [], []
 
         def run(cmd):
+            if cmd[0] == "ffprobe":
+                return 0, '{"streams":[{"duration":"2.0"}]}'
             self.commands.append(cmd)
             Path(cmd[-1]).write_bytes(b"video")
             return 0, ""
@@ -75,7 +77,8 @@ class ParallelShotsTests(unittest.TestCase):
             cuts = self.commands[:4]
             self.assertEqual([Path(cmd[-1]).name for cmd in cuts], [f"seg_{i:03d}.mp4" for i in range(1, 5)])
             listing = (Path(tmp) / "openart/segments/concat.txt").read_text()
-            self.assertLess(listing.index("seg_001"), listing.index("seg_002"))
+            self.assertLess(listing.index("core_001"), listing.index("transition_001"))
+            self.assertLess(listing.index("transition_001"), listing.index("core_002"))
             self.assertEqual(self.progress, sorted(self.progress))
             build.execute(**dict(args, motion=True, parallel=1))
             self.assertEqual(len(images), 4)

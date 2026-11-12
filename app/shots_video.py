@@ -14,6 +14,7 @@ import shutil
 import threading
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from pathlib import Path
+from shot_transitions import layout, core_command, dissolve_command
 
 DEFAULT_CLIP_SECONDS = 6
 MIN_CLIP_SECONDS, MAX_CLIP_SECONDS = 3, 20
@@ -130,17 +131,14 @@ def ffmpeg_still(image, out, seconds, size, zoom_in=True, reframe=False):
     """A Ken Burns segment from one still: slow zoom in (or out) over exactly `seconds`."""
     w, h = size
     frames = max(1, int(round(seconds * FPS)))
-    zoom = (f"min(1+0.0010*on,1.25)" if zoom_in else f"max(1.25-0.0010*on,1)")
+    # Spread the movement over the full scene instead of hitting a zoom cap and
+    # holding still, even for long scenes or transition handles.
+    phase = f"on/{max(1, frames - 1)}"
+    zoom = f"1.04+0.14*{phase}" if zoom_in else f"1.18-0.14*{phase}"
     x = "iw/2-(iw/zoom/2)"
     if reframe:
-        # New crops every ~4 seconds from the same paid image. The local camera
-        # keeps moving even in 12-second scenes; no additional AI requests.
-        beat = max(1, min(frames, 4 * FPS))
-        phase = f"mod(floor(on/{beat}),2)"
-        zoom = f"1.04+0.08*mod(on,{beat})/{beat}+0.06*{phase}"
-        if not zoom_in:
-            zoom = f"1.12-0.08*mod(on,{beat})/{beat}+0.06*{phase}"
-        x = f"(iw-iw/zoom)*(0.3+0.4*{phase})"
+        # Continuous pan instead of abrupt crop/zoom resets every four seconds.
+        x = f"(iw-iw/zoom)*(0.5+0.18*sin(2*PI*{phase}))"
     vf = (f"scale={w * 2}:{h * 2}:force_original_aspect_ratio=increase,crop={w * 2}:{h * 2},"
           f"zoompan=z='{zoom}':x='{x}':y='ih/2-(ih/zoom/2)':d={frames}:s={w}x{h}:fps={FPS},"
           f"format=yuv420p")
@@ -148,13 +146,32 @@ def ffmpeg_still(image, out, seconds, size, zoom_in=True, reframe=False):
             "-r", str(FPS), "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", str(out)]
 
 
-def ffmpeg_clip(clip, out, seconds, size):
-    """Cut or hold (freeze the last frame) a generated clip to exactly `seconds`."""
+def ffmpeg_clip(clip, out, seconds, size, source_duration=None):
+    """Fit a generated clip with slow motion when short, never a frozen tail."""
     w, h = size
-    vf = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},fps={FPS},"
-          f"tpad=stop_mode=clone:stop_duration={seconds:.3f},format=yuv420p")
-    return ["ffmpeg", "-y", "-loglevel", "error", "-i", str(clip), "-vf", vf, "-t", f"{seconds:.3f}",
+    speed = max(1.0, seconds / source_duration) if source_duration else 1.0
+    vf = (f"setpts={speed:.9f}*(PTS-STARTPTS),scale={w}:{h}:force_original_aspect_ratio=increase,"
+          f"crop={w}:{h},fps={FPS},format=yuv420p")
+    return ["ffmpeg", "-y", "-loglevel", "error", "-stream_loop", "-1", "-i", str(clip), "-vf", vf,
+            "-frames:v", str(max(1, round(seconds * FPS))),
             "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", str(out)]
+
+
+def media_duration(output):
+    """Prefer the video-stream duration; container duration can include longer audio."""
+    try:
+        data = json.loads(output)
+        candidates = [s.get("duration") for s in data.get("streams", [])] + [data.get("format", {}).get("duration")]
+        for value in candidates:
+            try:
+                seconds = float(value)
+                if math.isfinite(seconds) and seconds > 0:
+                    return seconds
+            except (TypeError, ValueError):
+                pass
+    except (ValueError, AttributeError, TypeError):
+        pass
+    raise RuntimeError("Could not read the OpenArt clip duration; the cached clip is kept for retry.")
 
 
 def ffmpeg_concat(list_file, out):
@@ -230,6 +247,7 @@ class ShotsBuild:
                  f" · {aspect} {resolution}")
         size = frame_size(aspect, resolution)
         n = len(plan)
+        timing, fade = layout(bounds, FPS)
         segments = []
         seg_dir = self.dir / "segments"
         seg_dir.mkdir(exist_ok=True)
@@ -303,16 +321,48 @@ class ShotsBuild:
             still, clip = media[i]
             seg = seg_dir / f"seg_{i:03d}.mp4"
             self.progress(0.70 + 0.15 * (i - 1) / n, f"shot {i}/{n}: cutting to {end - start:.1f}s")
-            cmd = (ffmpeg_clip(clip, seg, end - start, size) if motion
-                   else ffmpeg_still(still, seg, end - start, size, zoom_in=i % 2 == 1, reframe=reframe))
+            render_seconds = timing[i - 1]["frames"] / FPS
+            source_duration = None
+            if motion:
+                rc, output = self.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                                       "stream=duration:format=duration", "-of", "json", str(clip)])
+                if rc:
+                    raise RuntimeError(f"Could not inspect shot {i}: {output[-800:]}")
+                source_duration = media_duration(output)
+            cmd = (ffmpeg_clip(clip, seg, render_seconds, size, source_duration) if motion
+                   else ffmpeg_still(still, seg, render_seconds, size, zoom_in=i % 2 == 1, reframe=reframe))
             rc, output = self.run(cmd)
             if rc or not seg.exists():
                 raise RuntimeError(f"FFmpeg could not build shot {i}: {output[-800:]}")
             segments.append(seg)
         self.check()
-        self.progress(0.88, "joining the shots")
+        joined = []
+        if fade:
+            self.log(f"Adding {fade / FPS:.2f}s dissolves; original timeline boundaries are preserved.")
+            # Encode short boundary blends independently, not a 150-input graph or
+            # repeated re-encoding of the growing whole video.
+            for i, (seg, timing_item) in enumerate(zip(segments, timing)):
+                self.check()
+                self.progress(0.85 + 0.06 * i / n, f"smoothing scene {i + 1}/{n}")
+                core = seg_dir / f"core_{i + 1:03d}.mp4"
+                rc, output = self.run(core_command(seg, core, timing_item["start"], timing_item["end"], FPS))
+                if rc or not core.exists():
+                    raise RuntimeError(f"FFmpeg could not prepare scene {i + 1}: {output[-800:]}")
+                joined.append(core)
+                if i < n - 1:
+                    self.check()
+                    transition = seg_dir / f"transition_{i + 1:03d}.mp4"
+                    rc, output = self.run(dissolve_command(seg, segments[i + 1], transition,
+                                                          timing_item["frames"], fade, FPS))
+                    if rc or not transition.exists():
+                        raise RuntimeError(f"FFmpeg could not blend scenes {i + 1}/{i + 2}: {output[-800:]}")
+                    joined.append(transition)
+        else:
+            joined = segments
+        self.check()
+        self.progress(0.92, "joining the shots")
         list_file = seg_dir / "concat.txt"
-        list_file.write_text(concat_list(segments), encoding="utf-8")
+        list_file.write_text(concat_list(joined), encoding="utf-8")
         silent = self.dir / "video_silent.mp4"
         rc, output = self.run(ffmpeg_concat(list_file, silent))
         if rc or not silent.exists():
