@@ -80,6 +80,12 @@ Below are the shots, with the exact narration spoken during each one. For EVERY 
 - "motion": one short English sentence of camera movement for an image-to-video model
   (e.g. "slow push-in", "gentle pan left", "handheld drift", "orbit right"), no new objects.
 
+The opening shot must immediately illustrate the title's central conflict or question.
+Each later shot must add a concrete new visual beat matching its narration; alternate
+wide, medium and detail compositions while keeping the same world and characters.
+Compose with safe margins so gentle pans, zooms and reframing do not crop the subject.
+Prefer meaningful action or visual metaphors over generic decorative scenery.
+
 Shots:
 {shots}
 
@@ -120,13 +126,23 @@ def plan_key(voice, duration, seconds, aspect, motion):
     return hashlib.sha1(stamp.encode("utf-8")).hexdigest()[:12]
 
 
-def ffmpeg_still(image, out, seconds, size, zoom_in=True):
+def ffmpeg_still(image, out, seconds, size, zoom_in=True, reframe=False):
     """A Ken Burns segment from one still: slow zoom in (or out) over exactly `seconds`."""
     w, h = size
     frames = max(1, int(round(seconds * FPS)))
     zoom = (f"min(1+0.0010*on,1.25)" if zoom_in else f"max(1.25-0.0010*on,1)")
+    x = "iw/2-(iw/zoom/2)"
+    if reframe:
+        # New crops every ~4 seconds from the same paid image. The local camera
+        # keeps moving even in 12-second scenes; no additional AI requests.
+        beat = max(1, min(frames, 4 * FPS))
+        phase = f"mod(floor(on/{beat}),2)"
+        zoom = f"1.04+0.08*mod(on,{beat})/{beat}+0.06*{phase}"
+        if not zoom_in:
+            zoom = f"1.12-0.08*mod(on,{beat})/{beat}+0.06*{phase}"
+        x = f"(iw-iw/zoom)*(0.3+0.4*{phase})"
     vf = (f"scale={w * 2}:{h * 2}:force_original_aspect_ratio=increase,crop={w * 2}:{h * 2},"
-          f"zoompan=z='{zoom}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s={w}x{h}:fps={FPS},"
+          f"zoompan=z='{zoom}':x='{x}':y='ih/2-(ih/zoom/2)':d={frames}:s={w}x{h}:fps={FPS},"
           f"format=yuv420p")
     return ["ffmpeg", "-y", "-loglevel", "error", "-i", str(image), "-vf", vf, "-frames:v", str(frames),
             "-r", str(FPS), "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", str(out)]
@@ -184,7 +200,7 @@ class ShotsBuild:
         self.ask, self.run, self.progress, self.check, self.log = ask, run, progress, check, log
 
     def execute(self, *, voice, duration, narration, title, aspect, resolution, look="", seconds=DEFAULT_CLIP_SECONDS,
-                motion=True, music=None, out_name=None, parallel=1):
+                motion=True, music=None, out_name=None, parallel=1, reframe=False):
         seconds = clip_seconds(seconds)
         out_name = out_name or title or "video"
         bounds = slices(duration, seconds)
@@ -288,7 +304,7 @@ class ShotsBuild:
             seg = seg_dir / f"seg_{i:03d}.mp4"
             self.progress(0.70 + 0.15 * (i - 1) / n, f"shot {i}/{n}: cutting to {end - start:.1f}s")
             cmd = (ffmpeg_clip(clip, seg, end - start, size) if motion
-                   else ffmpeg_still(still, seg, end - start, size, zoom_in=i % 2 == 1))
+                   else ffmpeg_still(still, seg, end - start, size, zoom_in=i % 2 == 1, reframe=reframe))
             rc, output = self.run(cmd)
             if rc or not seg.exists():
                 raise RuntimeError(f"FFmpeg could not build shot {i}: {output[-800:]}")

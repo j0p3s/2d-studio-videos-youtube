@@ -22,6 +22,7 @@ from host_render import HostAnimation
 import openart_provider
 import shots_video
 from parallel_commands import CommandGroup
+from openart_defaults import migrate_defaults, build_options, RETENTION_BRIEF
 from openart_provider import OPENART
 import session_log
 import piper_voice
@@ -190,7 +191,7 @@ def scriptforge_prompt():
     t = PROMPT_FILE.read_text(encoding="utf-8")
     if t.startswith("---"):
         t = t.split("---", 2)[2]
-    return t.strip()
+    return t.strip() + "\n\n" + RETENTION_BRIEF
 
 
 def extract_json(text, opener="["):
@@ -224,7 +225,7 @@ class Studio(ctk.CTk):
         self.proc = None
         self._openart_commands = CommandGroup(ENV, creationflags=NO_WINDOW, log=session_log.write)
         self.busy = False
-        self.settings = migrate_speech_settings(load_settings())
+        self.settings = migrate_defaults(migrate_speech_settings(load_settings()))
         self.s = self.settings.get("current", {})   # current video state
         save_settings(self.settings)
         self.ideas = []
@@ -775,12 +776,16 @@ class Studio(ctk.CTk):
         self._sync_animate_page()
         engine = self.opt_engine.get()
         voice = self.opt_el_voice.get() if engine == "ElevenLabs" else self.opt_voice.get()
+        credit_note = ("OpenArt: Save credits is on (stills, local camera motion, 1080p; existing plans resume).\n"
+                       if self.settings.get("animation_provider") == OPENART
+                       and self.settings.get("openart_save_credits", True) else "")
         summary = (f"⚡ Auto will do: {' → '.join(todo)}, then stop on the Upload page.\n"
                    f"Nothing is published until you press Publish.\n\n"
                    + (f"Niche: {sub}\nLength: {self.opt_len.get()}  (uses the first idea)\n" if start in ("ideas", "script")
                       else f"Video: {s.get('title', '—')}\n")
                    + f"Voice: {engine} · {voice}\n"
-                   f"Video: {self.opt_aspect.get()} · {self.opt_res.get()} · {self.opt_style.get()} · parts {self.opt_parts.get()}\n\n"
+                   + credit_note
+                   + f"Video: {self.opt_aspect.get()} · {self.opt_res.get()} · {self.opt_style.get()} · parts {self.opt_parts.get()}\n\n"
                    "Settings come from the Script, Voiceover and Animate pages — change them there first if needed.\n"
                    "The animation step can take a long time. Start?")
         if not messagebox.askyesno("⚡ Auto", summary):
@@ -962,6 +967,17 @@ class Studio(ctk.CTk):
         self.opt_oa_parallel.set(str(shots_video.parallel_shots(self.settings.get("openart_parallel_shots"))))
         self.opt_oa_parallel.pack(side="left", padx=6)
         ctk.CTkLabel(row_parallel, text="Simultaneous scenes (1 = sequential; default 3)").pack(side="left", padx=6)
+        row_economy = ctk.CTkFrame(ai, fg_color="transparent")
+        row_economy.pack(fill="x", padx=12, pady=5)
+        self.sw_oa_economy = ctk.CTkSwitch(row_economy, text="Save OpenArt credits (recommended)",
+                                          command=self._save_openart)
+        if self.settings.get("openart_save_credits", True):
+            self.sw_oa_economy.select()
+        self.sw_oa_economy.pack(side="left")
+        ctk.CTkLabel(row_economy, wraplength=420, justify="left",
+                    text="1080p stills + local motion; 12s long / 6s Shorts; existing plans resume"
+                    ).pack(side="left", padx=12)
+        self._openart_economy_controls()
         buttons_ai = ctk.CTkFrame(ai, fg_color="transparent")
         buttons_ai.pack(fill="x", padx=12, pady=6)
         for provider in ("OpenAI (Codex)", "Gemini"):
@@ -983,7 +999,13 @@ class Studio(ctk.CTk):
         self.setup_log.pack(fill="both", expand=True, pady=(8, 0))
 
     def _save_openart(self, event=None):
-        self.settings["openart_motion"] = OA_MODES.get(self.opt_oa_mode.get(), True)
+        was_economy = self.settings.get("openart_save_credits", True)
+        self.settings["openart_save_credits"] = bool(self.sw_oa_economy.get())
+        if was_economy and not self.settings["openart_save_credits"]:
+            self.opt_oa_mode.set(next(k for k, v in OA_MODES.items()
+                                      if v == self.settings.get("openart_motion", True)))
+        if not self.settings["openart_save_credits"]:
+            self.settings["openart_motion"] = OA_MODES.get(self.opt_oa_mode.get(), True)
         self.settings["openart_parallel_shots"] = shots_video.parallel_shots(self.opt_oa_parallel.get())
         for key, entry in self.ent_oa.items():
             value = entry.get().strip()
@@ -991,6 +1013,15 @@ class Studio(ctk.CTk):
                 value = shots_video.clip_seconds(value) if value else ""
             self.settings[key] = value
         save_settings(self.settings)
+
+        self._openart_economy_controls()
+
+    def _openart_economy_controls(self):
+        state = "disabled" if self.sw_oa_economy.get() else "normal"
+        if self.sw_oa_economy.get():
+            self.opt_oa_mode.set(next(k for k, v in OA_MODES.items() if not v))
+        self.opt_oa_mode.configure(state=state)
+        self.ent_oa["openart_clip_seconds"].configure(state=state)
 
     def _openart_run(self, cmd, cwd=None):
         """Each concurrent command has its own process/output; Stop kills all of them."""
@@ -2213,6 +2244,8 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
 
     def _make_video_openart(self):
         try:
+            if self.settings.get("openart_save_credits", True):
+                self.opt_res.set("1080p")
             self._video_prompt()   # checks the voiceover and saves aspect, resolution and look notes
             self._openart_ready()
         except RuntimeError as e:
@@ -2222,9 +2255,14 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
         if dur <= 0:
             messagebox.showinfo("Animate", "Could not read the voiceover length (ffprobe). Make the voiceover again.")
             return
-        seconds = shots_video.clip_seconds(self.settings.get("openart_clip_seconds"))
-        motion = bool(self.settings.get("openart_motion", True))
-        parallel = shots_video.parallel_shots(self.settings.get("openart_parallel_shots"))
+        project = self._workdir()
+        try:
+            saved = json.loads((project / "openart" / "plan.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            saved = None
+        options = build_options(self.settings, shorts=bool(self.s.get("shorts")), saved=saved,
+                                voice=self.s["voice"], duration=dur, aspect=self.opt_aspect.get())
+        seconds, motion, parallel = options["seconds"], options["motion"], options["parallel"]
         image_model, video_model = self._openart_models()
         n = len(shots_video.slices(dur, seconds))
         what = (f"one {image_model} still and one {video_model} clip each" if motion
@@ -2234,8 +2272,11 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
                            "using your OpenArt credits. Finished shots are kept if it stops half way.\n\nContinue?"):
             return
         music = self.music_file if self.music_file and self.opt_music.get().startswith("Track") else None
-        project = self._workdir()
         self.anim_log.delete("1.0", "end")
+        if options["resuming"]:
+            self.log(self.anim_log, "Continuing the existing shot plan to reuse paid media; new defaults apply to new projects.")
+        elif options["economy"]:
+            self.log(self.anim_log, "Save credits: images only, local reframing, 1080p. No paid AI video clips.")
         self.log(self.anim_log, f"▶ OpenArt: {n} shots × ~{seconds:g} s for a {dur:.0f} s voiceover → {project}")
         if self.opt_music.get() == "Generated by mood":
             self.log(self.anim_log, "Music by mood is made by the GrowKaz kit; an OpenArt video uses your own track or none.")
@@ -2259,7 +2300,8 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
             return build.execute(voice=self.s["voice"], duration=dur, narration=narration,
                                  title=self.s.get("title", self.s["slug"]), aspect=aspect, resolution=resolution,
                                  look=self.ent_look.get().strip(), seconds=seconds, motion=motion, music=music,
-                                 out_name=self.s.get("title") or self.s["slug"], parallel=parallel)
+                                 out_name=self.s.get("title") or self.s["slug"], parallel=parallel,
+                                 reframe=options["economy"])
         self.run_job("Making the video (OpenArt)", work, self._video_done)
 
     def _suggest_characters_openart(self):
