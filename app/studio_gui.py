@@ -2601,7 +2601,8 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
         if not video or not Path(video).exists():
             messagebox.showinfo("Thumbnail", "Choose the video file first.")
             return
-        text = self.ent_thumb_text.get().strip().upper()
+        from thumb_text import drawable
+        text = drawable(self.ent_thumb_text.get()).upper()
         pct = self.sld_frame.get() / 100
         out = self._workdir() / "thumbnail.jpg"
 
