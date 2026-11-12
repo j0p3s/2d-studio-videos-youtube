@@ -93,11 +93,13 @@ if not defined CLAUDE_OK (
 if defined CLAUDE_OK (echo   [ok] Claude Code found) else (echo   [!] Claude Code not found - the GUI Setup page can retry this.)
 echo   [info] Codex and Gemini are optional alternatives: install and sign in from GUI Setup.
 echo   [info] Gemini API needs GEMINI_API_KEY in the .env file beside this installer.
+echo   [info] Higgsfield (AI video shots) needs HIGGSFIELD_API_KEY=key-id:key-secret there too.
 if not exist "%HOME2D%\.env" (
   >"%HOME2D%\.env" echo # Keys and defaults for the studio. This file stays on this PC.
   >>"%HOME2D%\.env" echo # GEMINI_API_KEY=
   >>"%HOME2D%\.env" echo # GEMINI_MODEL=gemini-3.5-flash
   >>"%HOME2D%\.env" echo # OLLAMA_MODEL=gpt-oss:20b
+  >>"%HOME2D%\.env" echo # HIGGSFIELD_API_KEY=key-id:key-secret
   echo   [ok] created .env ^(add your keys there^)
 )
 

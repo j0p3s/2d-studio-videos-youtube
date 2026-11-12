@@ -1,4 +1,5 @@
 """Local coding-agent adapters, plus Google's Gemini API called directly with an API key.
+Higgsfield (higgsfield_provider) is listed here as an animation-only provider; see higgsfield_video.
 
 CLI authentication stays in each vendor's CLI. The Gemini API key is read from the
 environment (GEMINI_API_KEY or GOOGLE_API_KEY), which the app fills from the studio's .env file.
@@ -14,9 +15,11 @@ from pathlib import Path
 
 import ollama_provider
 from ollama_provider import OLLAMA
+from higgsfield_provider import HIGGSFIELD
 
 GEMINI_API = "Gemini API"
-PROVIDERS = ("Claude", "OpenAI (Codex)", "Gemini", GEMINI_API, OLLAMA)
+PROVIDERS = ("Claude", "OpenAI (Codex)", "Gemini", GEMINI_API, OLLAMA, HIGGSFIELD)
+TEXT_PROVIDERS = tuple(p for p in PROVIDERS if p != HIGGSFIELD)   # Higgsfield makes video, not scripts
 GEMINI_API_MODEL = "gemini-3.8-flash"
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 GEMINI_API_TIMEOUT = 600  # long scripts take minutes to generate
@@ -101,7 +104,9 @@ def gemini_api_text(prompt, *, model="", env=None, retries=3):
 
 def cli_command(provider, env=None):
     env = env or os.environ
-    name = {"Claude": "claude", "OpenAI (Codex)": "codex", "Gemini": "gemini", GEMINI_API: "gemini"}[provider]
+    name = {"Claude": "claude", "OpenAI (Codex)": "codex", "Gemini": "gemini", GEMINI_API: "gemini"}.get(provider)
+    if not name:
+        raise RuntimeError(f"{provider} has no command-line agent: the studio drives it directly.")
     exe = shutil.which(name, path=env.get("PATH"))
     if name == "codex" and exe and "/openai/codex/bin/" in str(exe).replace("\\", "/").lower():
         raise RuntimeError("The selected executable belongs to Codex Desktop. Install the standalone CLI for the studio. "
@@ -235,6 +240,11 @@ def gemini_key_home(env):
 
 def run_agent(provider, prompt, run_cmd, *, cwd, env=None, animation=False,
               full_auto=False, model="", skill_dir=None, on_event=None):
+    if provider == HIGGSFIELD:   # no agent and no GrowKaz kit: the studio builds the video itself
+        if animation:
+            raise RuntimeError("Higgsfield animation is started by the studio, not by run_agent.")
+        raise RuntimeError("Higgsfield generates images and video, not text. In Setup choose it only for "
+                           "\"Animation & character designs\" and keep a text AI for \"Ideas & script\".")
     if animation and (not skill_dir or not (Path(skill_dir) / 'SKILL.md').is_file()):
         raise RuntimeError("GrowKaz skill missing. Re-run the studio installer from Setup.")
     if provider == OLLAMA:

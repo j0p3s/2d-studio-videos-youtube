@@ -22,6 +22,7 @@ A one-click setup and desktop app for making faceless, animated, stick-figure Yo
 | Claude | **Log in to Claude** | Existing Claude Code workflow and skills. |
 | OpenAI (Codex) | **Install OpenAI (Codex)**, then **Sign in: OpenAI (Codex)** | Codex CLI with its saved ChatGPT/API authentication. |
 | Gemini | **Install Gemini**, then **Sign in: Gemini** | Gemini CLI with its own Google/API authentication. |
+| Higgsfield (AI video) | `HIGGSFIELD_API_KEY=key-id:key-secret` in `.env` (key from [cloud.higgsfield.ai](https://cloud.higgsfield.ai)), then **Test Higgsfield key** | Animation only. The studio generates one AI still per shot (Soul) and optionally animates it (DoP), then cuts the shots to the narration with FFmpeg. No GrowKaz kit or agent involved. |
 
 Models are optional: leave the field blank to use the CLI default. Provider and model selections are saved for the next run; each active job keeps the selections it started with. Voiceover, GPU rendering and YouTube upload use the same pipeline for every provider. CLI authentication is managed by the vendor; the app does not copy credentials into its settings.
 
@@ -44,8 +45,17 @@ For a manual app update, copy the changed files from `app` into `.\app`, includi
 |---|---|
 | **① Script** | Pick a niche and a length (Shorts up to 12 min) to get 10 ideas from ScriptForge through your selected script provider. Pick one and you get the full script, alternative titles, tags, a description and thumbnail text. Type edit requests to revise it. |
 | **② Voiceover** | Uses English Microsoft Neural voices, including Andrew, Guy, Aria and Jenny, for every AI provider. You can also import a recording verified as English. |
-| **③ Animate** | Your selected animation agent runs the GrowKaz pipeline: Whisper timestamps, a shot plan, code-drawn 2D/3D scenes, music, sound effects and the final MP4. Long videos are built in several *parts*, one agent pass per section. **Suggest character styles** renders 4 character looks for you to choose from. **Open animation agent** lets you run it interactively instead. |
+| **③ Animate** | Your selected animation agent runs the GrowKaz pipeline: Whisper timestamps, a shot plan, code-drawn 2D/3D scenes, music, sound effects and the final MP4. Long videos are built in several *parts*, one agent pass per section. **Suggest character styles** renders 4 character looks for you to choose from. **Open animation agent** lets you run it interactively instead. With **Higgsfield (AI video)** selected, the studio instead splits the voiceover into shots of a few seconds, asks your script AI for an image and camera prompt per shot, generates them on Higgsfield and cuts them to the narration (see below). |
 | **④ Upload** | Makes a thumbnail from a video frame with big text on it, fills in the title, description and tags from the script, and uploads to YouTube (private, unlisted, public or scheduled). |
+
+## Higgsfield (AI-generated shots)
+Higgsfield is an alternative to the GrowKaz stick-figure pipeline for the **Animation** stage: photoreal or illustrated AI shots instead of code-drawn scenes. Set it up once:
+
+1. Create an API key at [cloud.higgsfield.ai](https://cloud.higgsfield.ai) and put `HIGGSFIELD_API_KEY=key-id:key-secret` in the `.env` file beside the launchers (the SDK names `HF_KEY`, or `HF_API_KEY` + `HF_API_SECRET`, work too). Restart the app and press **Test Higgsfield key** in Setup.
+2. In **Setup** choose **Higgsfield (AI video)** for *Animation & character designs*. Keep a text AI (Claude, Codex, Gemini API or Ollama) for *Ideas & script*: it also writes the shot prompts. The Model box takes the DoP model: `dop-turbo` (default), `dop-lite` (cheapest) or `dop-standard` (best).
+3. Choose **Stills + AI motion (DoP)** or **Stills only (Ken Burns, cheaper)** and the seconds per shot (default 6, 3–20). A 10-minute voiceover at 6 s is 100 shots; each shot costs credits, so Make the video asks before it starts (Auto does not).
+
+What happens: the voiceover is split into equal shots, the narration spoken in each one is estimated from its position in the script, and the script AI returns one JSON image prompt and one camera-motion prompt per shot. Each still is generated with Soul at the video's aspect ratio, uploaded and animated with DoP (or zoomed by FFmpeg in stills-only mode), cut or frozen to the shot's exact length, joined, and mixed with the voiceover (and your own music track at low volume, if chosen). Everything is saved under `work\<project>\higgsfield\`; a second run after a stop, a failure or an empty credit balance reuses the plan and the finished shots. Thumbnail and Upload work as usual. Not available: music by mood, burned-in captions, character styles from the kit (Suggest character styles makes 4 Higgsfield stills instead), the interactive agent, and offline mode. Prompts refused as unsafe (`nsfw`) stop the build; soften the look notes or the script and run again.
 
 ## YouTube setup (once)
 Go to **Upload → YouTube setup** and follow the steps there. You create a free Google Cloud project, enable the *YouTube Data API v3*, create an OAuth **Desktop app** client, and choose its `client_secret.json`. Then click **Connect**. Until Google verifies your app, YouTube may force uploads to private; you can make them public in YouTube Studio.

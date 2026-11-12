@@ -2,7 +2,7 @@
 
 ## 1. Goal
 - Portable Windows studio: ideas → script → narration → GrowKaz animation → thumbnail → explicit YouTube upload.
-- Scripts and animation can each use Claude, OpenAI (Codex), Gemini (CLI), Gemini API (key from `.env`) or Ollama (offline).
+- Scripts and animation can each use Claude, OpenAI (Codex), Gemini (CLI), Gemini API (key from `.env`) or Ollama (offline). Animation can also use Higgsfield (AI-generated shots, key from `.env`).
 - It must keep working with no AI credits: local AI through Ollama and a local Piper voice.
 
 ## 2. Current status
@@ -22,6 +22,7 @@
 - 2026-11-11: the user ran Auto offline with `gpt-oss:20b` (now downloaded). Ideas worked; "Writing script" failed once with "returned no text" after 30 s. Six direct repeats with the real ScriptForge prompt all answered (20-43 s), so the cause is unconfirmed; `ollama_provider.text` now asks again up to twice on an empty answer and reports reasoning length and stop reason (PR #27).
 - Not yet run end to end: the host-render flow on a full multi-pass video; a GUI Animate run with Gemini API; a full offline Animate run; a whole voiceover from the Voice page with Piper; the full installer after its offline/Piper changes.
 - Android prototype in `Adnroid-App/` (spelling intentional): separate native renderer, not a GrowKaz port.
+- Higgsfield provider (branch `ccr-0a854077-utej2x`, 2026-11-12): `app/higgsfield_provider.py` (REST client: Soul text-to-image, DoP image-to-video, upload, motions) and `app/higgsfield_video.py` (shot slicing, shot-plan prompt/parsing, FFmpeg cut/concat/mux, `HiggsfieldBuild`). Not run against the real API: the docs host was unreachable from the session, so the contract was taken from the official SDKs (`higgsfield-client` 0.2.0 on PyPI, `@higgsfield/client` 0.2.6 on npm). First real run should start with Setup → Test Higgsfield key, then a Short in stills-only mode.
 
 ## 3. Key decisions and reasons
 - Offline mode: provider "Ollama (offline)" plus a Setup switch "Always work offline" that overrides both provider menus, forces the Piper voice and sets `HF_HUB_OFFLINE` for Whisper. It means local AI and voice, not "no internet": Upload is not blocked (user request).
@@ -41,6 +42,7 @@
 - Codex always stays sandboxed; the Full auto checkbox applies to Claude and Gemini only.
 - License (user request 2026-11-11): GPL version 3, `LICENSE` at the root, for the studio's own code. The GrowKaz plugin and the niche-prompt PDF are third-party: they were untracked and gitignored on 2026-11-11 (user request) but stay on disk in both folders, where the installer and `install_local_skills` still need the plugin. On 2026-11-11 (user request) `main` was rewritten with `git filter-branch` to drop both files from every commit and force-pushed, and all 25 merged remote branches were deleted, so every commit ID from before that date changed and old SHAs in notes or PR pages no longer match `main`. GitHub still serves the old commits through the PR pages and direct commit links until GitHub Support purges them (the user has to ask). A local-only ref `refs/codex/turn-diffs/...` (Codex app data) still holds the two blobs; it is not on GitHub. `app/skills/scriptforge/SKILL.md` is derived from that PDF and is still tracked.
 - Workflow the user follows: each change goes on a branch and a PR; merge and sync the active folder only after they say so.
+- Higgsfield: an animation-only provider (`TEXT_PROVIDERS` keeps it out of the script menu). The studio drives the API itself with urllib (no SDK dependency, like Gemini API), the key is `HIGGSFIELD_API_KEY=key-id:key-secret` in `.env` sent as `Authorization: Key …`. Shot timing is fixed slices (setting `higgsfield_clip_seconds`, default 6) with narration estimated by character position, so no Whisper is needed; the script-stage AI writes the per-shot prompts. `higgsfield_motion` false = stills with an FFmpeg Ken Burns zoom (far cheaper). Finished stills/clips and `plan.json` under `work/<slug>/higgsfield/` are reused on the next run when voice, duration, shot length, aspect and mode match; otherwise the folder is cleared. DoP clip length is not configurable through the SDK, so each clip is cut or last-frame-frozen (`tpad`) to its slice. Offline mode, captions, music by mood and the interactive agent are refused/skipped with a message.
 
 ## 4. Failed approaches — do not repeat
 - Replacing `ai_providers.py` with a Gemini-only module (different `run_agent`/`portable_prompt` signatures, lowercase provider names).
@@ -59,6 +61,7 @@
 - `app/ollama_provider.py`: local AI (server start, model check, streamed text, model download, Claude-CLI environment). `app/piper_voice.py`: Piper voice to MP3. Tests for both in `app/test_ollama_provider.py` (fake Ollama server).
 - `app/session_log.py`: the session log (tested). The GUI logs jobs, child-process output, dialogs and tracebacks through it.
 - `app/host_render.py`: host rendering, visual QC checkpoints, final validation (has tests).
+- `app/higgsfield_provider.py`, `app/higgsfield_video.py`: Higgsfield API client and the shots-to-video build. Tests: `app/test_higgsfield.py` (fake API server, build with stubbed generation).
 - `app/portable_paths.py`, `app/language_policy.py`: local paths/migration, English-only policy and the voice-engine default (both tested).
 - `app/patch_kit.py`, `app/video_encoder.mjs`: idempotent kit patches and encoder selection.
 - `Install-2D-Studio.cmd`: 8 steps; creates a `.env` template, installs `piper-tts`, pre-downloads the Whisper `small` model and the Piper voice, and offers Ollama + `gpt-oss:20b` (two Y/N prompts that default to N after 30 s). `Launch-2D-Studio.cmd` starts the GUI.
@@ -72,6 +75,7 @@
 4. Online path: Setup → "Gemini API" for both stages, Model `gemini-3.5-flash`; try Animate. Claude is the recommended provider for animation.
 5. Run Auto on a long video (~500 s, four passes) and check host-rendered sheets, checkpoint resume and cross-pass style.
 6. After code changes run `.venv/Scripts/python.exe -m unittest discover -s app -p "test_*.py"` and `node --test app/video_encoder.test.mjs`.
+7. Higgsfield: first real run (key test, then a Short with "Stills only"), check the DoP clip length and the cut/freeze quality, and whether the `/v1/motions` reply is a list or `{items: [...]}` (both are handled). If the API rejects a field (`enhance_prompt`, `quality`), drop it in `higgsfield_provider.text_to_image`/`image_to_video`.
 
 ## 7. Open questions / gotchas
 - Offline animation is NOT proven. Verified live: Ollama text through the GUI, Piper voice, Whisper loading offline, and the Claude CLI reaching Ollama. With the only chat model on this PC (`llama3.2`, 3B) the CLI got an answer but the model claimed it wrote a file without calling the tool. `gpt-oss:20b` is downloaded now (runs 100% on the GPU) but has not reached Animate yet.
