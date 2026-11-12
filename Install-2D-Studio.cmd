@@ -159,9 +159,9 @@ set PY="%HOME2D%\.venv\Scripts\python.exe"
 echo   downloading the Whisper speech model (about 500 MB, once) ...
 %PY% -c "from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8')"
 if errorlevel 1 (echo   [!] Whisper model not downloaded - it will download on the first video instead.) else (echo   [ok] Whisper model ready for offline use)
-echo   downloading the Piper offline voice (about 120 MB, once) ...
-if not exist "%HOME2D%\.cache\piper\en_US-ryan-high.onnx" %PY% -m piper.download_voices --download-dir "%HOME2D%\.cache\piper" en_US-ryan-high
-if exist "%HOME2D%\.cache\piper\en_US-ryan-high.onnx" (echo   [ok] Piper voice ready for offline use) else (echo   [!] Piper voice not downloaded - it will download on the first offline voiceover instead.)
+echo   downloading the Piper offline voice (about 60 MB, once) ...
+if not exist "%HOME2D%\.cache\piper\en_US-joe-medium.onnx" %PY% -m piper.download_voices --download-dir "%HOME2D%\.cache\piper" en_US-joe-medium
+if exist "%HOME2D%\.cache\piper\en_US-joe-medium.onnx" (echo   [ok] Piper voice ready for offline use) else (echo   [!] Piper voice not downloaded - it will download on the first offline voiceover instead.)
 
 rem ---------- 7. Offline mode (optional) --------------------------------------
 call :banner "7/8  Offline mode (optional): Ollama + local AI model"

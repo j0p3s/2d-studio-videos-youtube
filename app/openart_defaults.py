@@ -14,6 +14,9 @@ truthful; never invent facts, sources, statistics or promises to increase clicks
 """
 
 
+DEFAULT_RESOLUTION = "720p"   # the Animate page starts here and Save credits builds use it
+
+
 def migrate_defaults(settings):
     settings.setdefault("openart_save_credits", True)
     return settings

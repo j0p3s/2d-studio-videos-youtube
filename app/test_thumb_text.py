@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 
-from thumb_text import drawable
+from thumb_text import drawable, set_label_image
 
 
 class DrawableTest(unittest.TestCase):
@@ -31,6 +31,33 @@ class DrawableTest(unittest.TestCase):
             square = bytes(font.getmask("\uffff"))  # the "no such character" box
             self.assertEqual(bytes(font.getmask("\u2011")), square, f"{f.name}: test assumption")
             self.assertEqual([c for c in text if c != " " and bytes(font.getmask(c)) == square], [], f.name)
+
+
+class PreviewImageTest(unittest.TestCase):
+    def test_new_image_after_clearing_and_freeing_the_old_one(self):
+        import gc
+        try:
+            import customtkinter as ctk
+            from PIL import Image
+            root = ctk.CTk()
+        except Exception as e:
+            self.skipTest(f"no display or toolkit: {e}")
+        try:
+            root.withdraw()
+            label = ctk.CTkLabel(root, text="No thumbnail yet")
+            label.pack()
+            first = ctk.CTkImage(light_image=Image.new("RGB", (40, 20)), size=(40, 20))
+            set_label_image(label, first, "")
+            root.update_idletasks()
+            set_label_image(label, None, "No thumbnail yet")
+            del first
+            gc.collect()
+            second = ctk.CTkImage(light_image=Image.new("RGB", (40, 20)), size=(40, 20))
+            set_label_image(label, second, "")   # raised: image "pyimage1" doesn't exist
+            root.update_idletasks()
+            self.assertEqual(label.cget("text"), "")
+        finally:
+            root.destroy()
 
 
 if __name__ == "__main__":
