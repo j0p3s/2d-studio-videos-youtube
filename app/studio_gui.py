@@ -26,11 +26,13 @@ from openart_defaults import migrate_defaults, build_options, RETENTION_BRIEF, D
 from openart_provider import OPENART
 import session_log
 import piper_voice
+import qwen_voice
 from thumb_text import drawable, set_label_image
 import ollama_provider
 from ollama_provider import OLLAMA
 from language_policy import (ENGLISH_VOICES, english_voice, english_prompt, narration_hash,
-                             normalize_narration_prompt, migrate_speech_settings, verify_english_recording)
+                             normalize_narration_prompt, migrate_speech_settings, verify_english_recording,
+                             voice_engine, EDGE_ENGINE)
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -1544,12 +1546,21 @@ class Studio(ctk.CTk):
 
     # ================================================================== VOICE PAGE
     def _page_voice(self, p):
-        self.header(p, "② Voiceover", "English narration: Microsoft Neural voices (online) or Piper voices that run on this PC "
-                    "(offline). Imported recordings must also be in English.")
+        self.header(p, "② Voiceover", "English narration: Piper or Qwen3 voices that run on this PC (offline; Qwen3 can speak "
+                    "in a calm, relaxing style) or Microsoft Neural voices (online). Imported recordings "
+                    "must also be in English.")
         eng = self.card(p)
         ctk.CTkLabel(eng, text="Voice engine").grid(row=0, column=0, padx=(16, 6), pady=12)
-        self.opt_engine = ctk.CTkSegmentedButton(eng, values=[piper_voice.ENGINE, "Free (Edge)"], command=self._on_engine)
+        self.opt_engine = ctk.CTkSegmentedButton(eng, values=[piper_voice.ENGINE, qwen_voice.ENGINE, EDGE_ENGINE],
+                                                 command=self._on_engine)
         self.opt_engine.grid(row=0, column=1, padx=(0, 16))
+        self.qwen_frame = ctk.CTkFrame(eng, fg_color="transparent")   # only shown for Qwen3
+        ctk.CTkLabel(self.qwen_frame, text="Speaking style").pack(side="left", padx=(0, 6))
+        self.opt_qwen_style = ctk.CTkOptionMenu(self.qwen_frame, values=list(qwen_voice.STYLES), width=190)
+        self.opt_qwen_style.set(qwen_voice.qwen_style(self.settings.get("qwen_style")))
+        self.opt_qwen_style.pack(side="left")
+        self.lbl_qwen = ctk.CTkLabel(self.qwen_frame, text="", text_color="#8b94a3")
+        self.lbl_qwen.pack(side="left", padx=10)
         self.el_frame = ctk.CTkFrame(eng, fg_color="transparent")
         ctk.CTkLabel(self.el_frame, text="API key").pack(side="left")
         self.ent_el_key = ctk.CTkEntry(self.el_frame, width=230, show="•", placeholder_text="paste your ElevenLabs key")
@@ -1592,20 +1603,30 @@ class Studio(ctk.CTk):
         ctk.CTkButton(bot, text="Next: Animate →", width=150, command=lambda: self.show("animate")).pack(side="right")
         ctk.CTkButton(bot, text="▶ Play", width=90, fg_color="#1d222b", hover_color="#272d38",
                       command=lambda: self.s.get("voice") and open_path(self.s["voice"])).pack(side="right", padx=8)
-        self.opt_engine.set(self.settings.get("engine", piper_voice.ENGINE))
-        self._on_engine(self.opt_engine.get())
+        self._on_engine(self.settings.get("engine", piper_voice.ENGINE))
 
     def _on_engine(self, v):
-        if not self.offline():                      # offline mode forces Piper without changing the choice
-            self.settings["engine"] = piper_voice.ENGINE if v == piper_voice.ENGINE else "Free (Edge)"
-        piper = self.offline() or self.settings["engine"] == piper_voice.ENGINE
-        self.opt_engine.set(piper_voice.ENGINE if piper else "Free (Edge)")
+        if not self.offline() or v != EDGE_ENGINE:  # offline mode shows Piper for Edge without changing the choice
+            self.settings["engine"] = v if v in (piper_voice.ENGINE, qwen_voice.ENGINE) else EDGE_ENGINE
+        engine = voice_engine(self.settings)
+        self.opt_engine.set(engine)
         self.el_frame.grid_forget()
-        shown = self.opt_voice.get()               # keep the voice picked for the other engine
-        self.settings["piper_voice" if shown in piper_voice.VOICES else "voice"] = shown
-        self.opt_voice.configure(state="normal", values=piper_voice.VOICES if piper else VOICES)
-        self.opt_voice.set(piper_voice.piper_voice(self.settings.get("piper_voice")) if piper
-                           else english_voice(self.settings.get("voice")))
+        shown = self.opt_voice.get()               # keep the voice picked for the other engines
+        self.settings["piper_voice" if shown in piper_voice.VOICES else
+                      "qwen_voice" if shown in qwen_voice.VOICES else "voice"] = shown
+        if engine == qwen_voice.ENGINE:
+            self.qwen_frame.grid(row=0, column=2, padx=(0, 16))
+            self.lbl_qwen.configure(text="" if qwen_voice.installed(HOME) else
+                                    f"not installed yet ({qwen_voice.DOWNLOAD_NOTE})")
+            self.opt_voice.configure(state="normal", values=qwen_voice.VOICES)
+            self.opt_voice.set(qwen_voice.qwen_voice(self.settings.get("qwen_voice")))
+        else:
+            self.qwen_frame.grid_forget()
+            piper = engine == piper_voice.ENGINE
+            self.opt_voice.configure(state="normal", values=piper_voice.VOICES if piper else VOICES)
+            self.opt_voice.set(piper_voice.piper_voice(self.settings.get("piper_voice")) if piper
+                               else english_voice(self.settings.get("voice")))
+        self.edge_label.configure(text="Voice")
 
     def _el_request(self, path, payload=None):
         import urllib.request
@@ -1854,13 +1875,24 @@ class Studio(ctk.CTk):
             messagebox.showinfo("Voiceover", "The narration is empty.")
             return
         rate, shown = int(self.sld_rate.get()), self.opt_voice.get()
-        piper = bool(self.settings.get("offline")) or self.settings.get("engine") == piper_voice.ENGINE
-        if piper:
+        engine = voice_engine(self.settings)
+        piper, qwen = engine == piper_voice.ENGINE, engine == qwen_voice.ENGINE
+        style = None
+        if qwen:
+            voice = qwen_voice.qwen_voice(shown if shown in qwen_voice.VOICES else self.settings.get("qwen_voice"))
+            style = qwen_voice.qwen_style(self.opt_qwen_style.get())
+            self.settings.update({"qwen_voice": voice, "qwen_style": style, "rate": rate})
+            if not qwen_voice.installed(HOME) and not messagebox.askyesno(
+                    "Qwen3-TTS", "Qwen3-TTS is not installed yet. Download and install it now "
+                    f"({qwen_voice.DOWNLOAD_NOTE})?\n\nIt goes into the studio folder, needs an NVIDIA graphics "
+                    "card to be fast, and the voiceover starts when it is ready."):
+                return
+        elif piper:
             voice = piper_voice.piper_voice(shown if shown in piper_voice.VOICES else self.settings.get("piper_voice"))
             self.settings.update({"piper_voice": voice, "rate": rate})
         else:
             voice = english_voice(shown)
-            self.settings.update({"voice": voice, "rate": rate, "engine": "Free (Edge)"})
+            self.settings.update({"voice": voice, "rate": rate, "engine": EDGE_ENGINE})
         self.opt_voice.set(voice)
         out = d / "voiceover.mp3"
         english_verified = self.s.get("narration_en_hash") == narration_hash(text)
@@ -1870,6 +1902,13 @@ class Studio(ctk.CTk):
             self.check_cancel()
             (d / "script.txt").write_text(narration + "\n", encoding="utf-8")
             (d / "voiceover.srt").unlink(missing_ok=True)   # leftover from the old single-request method
+            if qwen:
+                if not qwen_voice.installed(HOME):
+                    qwen_voice.install(HOME, PY, self.run_cmd, lambda frac, note: self.prog(frac, note))
+                    self.check_cancel()
+                return qwen_voice.speak(narration, out, voice=voice, style=style, rate=rate, home=HOME,
+                                        cache=d / "voice_parts", run=self.run_cmd, env=ENV,
+                                        progress=lambda frac, note: self.prog(frac, note)), narration
             if piper:
                 self.prog(None, f"speaking with the Piper voice {voice} (on this PC)")
                 return piper_voice.speak(narration, out, voice=voice, rate=rate, folder=PIPER_DIR, env=ENV), narration
@@ -1881,7 +1920,8 @@ class Studio(ctk.CTk):
             self.s.pop("thumb", None)
             self.s.update({"voice": str(audio), "lang": "en", "narration": narration,
                            "narration_en_hash": narration_hash(narration),
-                           "speech_engine": "piper-offline" if piper else "microsoft-neural"})
+                           "speech_engine": "qwen3-tts-local" if qwen else "piper-offline" if piper
+                           else "microsoft-neural"})
             self.txt_narr.delete("1.0", "end")
             self.txt_narr.insert("1.0", narration)
             self.save_state()
