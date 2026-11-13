@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from language_policy import ENGLISH_VOICES, english_voice, narration_hash, migrate_speech_settings
+from language_policy import ENGLISH_VOICES, english_voice, narration_hash, migrate_speech_settings, clean_narration
 from studio_gui import Studio
 
 
@@ -62,6 +62,34 @@ class EnglishPipelineTests(unittest.TestCase):
             self.assertEqual(app.settings['engine'], 'Free (Edge)')
             self.assertEqual(app.s['lang'], 'en')
             self.assertEqual((folder / 'script.txt').read_text(), 'Start small.\n')
+
+
+class CleanNarrationTests(unittest.TestCase):
+    def test_dashes_become_spoken_pauses_so_words_stay_separate(self):
+        self.assertEqual(clean_narration('Second, perform the habit for two minutes—blink, stretch, or read a sentence.'),
+                         'Second, perform the habit for two minutes, blink, stretch, or read a sentence.')
+        self.assertEqual(clean_narration('Finally, reward yourself instantly—sip water, smile, or check a box.'),
+                         'Finally, reward yourself instantly, sip water, smile, or check a box.')
+        self.assertEqual(clean_narration('Unlock a habit in just 180 seconds—no willpower required.'),
+                         'Unlock a habit in just 180 seconds, no willpower required.')
+
+    def test_spaced_and_en_dashes_and_hyphens_used_as_dashes(self):
+        self.assertEqual(clean_narration('one — two – three ―four'), 'one, two, three, four')
+        self.assertEqual(clean_narration('one - two -- three'), 'one, two, three')
+
+    def test_existing_punctuation_is_not_doubled(self):
+        self.assertEqual(clean_narration('Wait,—really? Yes.—Go!'), 'Wait, really? Yes. Go!')
+
+    def test_leading_and_trailing_dashes_are_dropped_per_line(self):
+        self.assertEqual(clean_narration('—Start here—\nNext line —\nEnd'), 'Start here\nNext line\nEnd')
+
+    def test_ordinary_hyphens_and_plain_text_are_untouched_and_it_is_idempotent(self):
+        plain = 'A 3-minute, well-known habit. No dashes here.'
+        self.assertEqual(clean_narration(plain), plain)
+        once = clean_narration('a—b - c')
+        self.assertEqual(clean_narration(once), once)
+        self.assertEqual(clean_narration(''), '')
+        self.assertNotIn('—', clean_narration('x—y—z'))
 
 
 if __name__ == '__main__':

@@ -34,7 +34,7 @@ import model_choices
 from thumb_text import drawable, set_label_image
 import ollama_provider
 from ollama_provider import OLLAMA
-from language_policy import (ENGLISH_VOICES, english_voice, english_prompt, narration_hash,
+from language_policy import (ENGLISH_VOICES, english_voice, english_prompt, narration_hash, clean_narration,
                              normalize_narration_prompt, migrate_speech_settings, verify_english_recording,
                              voice_engine, EDGE_ENGINE)
 from datetime import datetime, timezone
@@ -1663,7 +1663,7 @@ class Studio(ctk.CTk):
             parts = re.split(r"^===(SCRIPT|NARRATION|META)===\s*$", text, flags=re.M)
             sec = {parts[i]: parts[i + 1].strip() for i in range(1, len(parts) - 1, 2)}
             script = sec.get("SCRIPT", text.strip())
-            narration = sec.get("NARRATION") or self._narration_from_script(script)
+            narration = clean_narration(sec.get("NARRATION") or self._narration_from_script(script))
             try:
                 meta = extract_json(sec.get("META", "{}"), "{")
             except Exception:
@@ -2099,7 +2099,7 @@ class Studio(ctk.CTk):
         english_verified = self.s.get("narration_en_hash") == narration_hash(text)
 
         def work():
-            narration = text if english_verified else self.ask_ai(normalize_narration_prompt(text), cwd=HOME)
+            narration = clean_narration(text if english_verified else self.ask_ai(normalize_narration_prompt(text), cwd=HOME))
             self.check_cancel()
             (d / "script.txt").write_text(narration + "\n", encoding="utf-8")
             (d / "voiceover.srt").unlink(missing_ok=True)   # leftover from the old single-request method
@@ -2139,7 +2139,7 @@ class Studio(ctk.CTk):
             def work():
                 self.prog(0.1, "Checking that the recording is English")
                 verify_english_recording(f, ENV, NO_WINDOW)
-                return text if self.s.get("narration_en_hash") == narration_hash(text) else self.ask_ai(normalize_narration_prompt(text), cwd=HOME)
+                return clean_narration(text if self.s.get("narration_en_hash") == narration_hash(text) else self.ask_ai(normalize_narration_prompt(text), cwd=HOME))
             def done(narration):
                 (d / "script.txt").write_text(narration + "\n", encoding="utf-8")
                 self.s.pop("video", None)

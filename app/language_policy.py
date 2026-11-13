@@ -1,5 +1,6 @@
 """English output and Piper/Qwen3/Edge voice selection, independent of AI provider."""
 import hashlib
+import re
 
 ENGLISH_POLICY = (
     "MANDATORY OUTPUT LANGUAGE: English. The user's interface language and the language of supplied "
@@ -49,6 +50,20 @@ def migrate_speech_settings(settings):
 
 def narration_hash(text):
     return hashlib.sha256(text.strip().encode("utf-8")).hexdigest()
+
+
+def clean_narration(text):
+    """Turn dashes into spoken pauses so every word stays a separate caption word.
+
+    Models write 'minutes—blink' with no spaces. Alignment then treats it as one word and the
+    captions run words together. A comma is a natural pause for text-to-speech as well.
+    """
+    dash = "[—–―]+"
+    text = re.sub(r"[ \t]*" + dash + r"[ \t]*(?=\n|$)", "", text)            # dash at end of a line
+    text = re.sub(r"(?m)^[ \t]*" + dash + r"[ \t]*", "", text)                # dash at start of a line
+    text = re.sub(r"(?<=[,.;:!?])[ \t]*" + dash + r"[ \t]*", " ", text)       # punctuation already pauses
+    text = re.sub(r"[ \t]*" + dash + r"[ \t]*", ", ", text)
+    return re.sub(r"[ \t]+-{1,2}[ \t]+", ", ", text)                          # spaced hyphen used as a dash
 
 
 def english_prompt(prompt):

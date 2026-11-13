@@ -150,6 +150,18 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
   lists exact channel names. Restart the GUI so the new prompt loads. Not yet re-run end to end.
   Hoodie/face rendering is unchanged (uniform-width limbs; tapered limbs/hands/feet are a possible
   next step). Restart the GUI to load the engine update.
+  Later prompt commits: `71d6486` (neutral example pose; the model had copied the example angles into
+  several scenes, freezing shots) and `63cacd1` (full-body scale `s=E.H/420`, 70-unit reach limit with
+  screen-to-rig conversion, props placed via `jointWorld`). The 14:37 15s offline video had the first
+  but not the second; the second is untested in a real run. That video showed small figures, floating
+  props and little motion, which are model-quality issues the audit does not catch (an audit check for
+  too-small figures is an idea, not built).
+- Captions: offline scripts wrote dashes without spaces (`minutes—blink,`), which alignment treated as
+  one word and the captions ran together. `clean_narration()` in `language_policy.py` now turns
+  em/en dashes and spaced hyphens into commas where the narration is created and again before voice and
+  `script.txt` are written (`studio_gui.py`). Unit-tested; not yet confirmed in a rendered video, and
+  I did not inspect the kit's caption drawing code, so spacing may still need a look. Existing projects
+  keep old narration until their voiceover is regenerated.
 
 - Pipeline: ideas/script → English narration → kit animation, OpenArt or CastWorkshop clips → thumbnail →
   explicit YouTube Publish. Nothing is uploaded merely by generating a video.
