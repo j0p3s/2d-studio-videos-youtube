@@ -1,0 +1,8 @@
+{
+  "duration": 15,
+  "seed": 1372026,
+  "image_prompt": "Cinematic medium shot of a friendly adult presenter wearing a teal hoodie, seated at a tidy wooden desk in a navy blue studio. Warm amber window light, natural face, hands resting on the desk, looking toward the camera. Widescreen photography, no text or logos.",
+  "dialogue": "Small habits make starting easier. Take one calm breath, choose one clear task, and begin. You do not need a perfect morning to make real progress today.",
+  "voice_description": "A clear, warm adult voice speaking natural English at a calm conversational pace.",
+  "video_prompt": "[Shot 1] A continuous cinematic medium shot of the adult presenter in <Picture 1>, wearing the same teal hoodie in the same warmly lit navy studio. The presenter looks toward the camera, takes a calm breath, and makes one small natural hand gesture. The camera slowly pushes in. Using the voice identity from <Audio 1>, the presenter speaks clearly with synchronized lips: \"Small habits make starting easier. Take one calm breath, choose one clear task, and begin. You do not need a perfect morning to make real progress today.\" Quiet room ambience. No music, no subtitles, no cuts. The presenter settles naturally after speaking."
+}

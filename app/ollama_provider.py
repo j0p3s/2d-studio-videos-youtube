@@ -206,7 +206,7 @@ def _chat_events(payload, env, check_cancel, idle_callback=None):
 
 
 def text(prompt, *, model="", env=None, on_text=None, context=TEXT_CONTEXT,
-         thinking=None, response_format=None, on_metrics=None, check_cancel=None):
+         thinking=None, response_format=None, on_metrics=None, check_cancel=None, on_retry=None):
     """One chat answer from the local model, streamed to on_text piece by piece."""
     ensure_running(env)
     name = pick_model(model, env)
@@ -223,6 +223,8 @@ def text(prompt, *, model="", env=None, on_text=None, context=TEXT_CONTEXT,
     # Reasoning models (gpt-oss, qwen3, ...) sometimes spend the whole reply on reasoning and stop
     # with an empty answer, so an empty reply is asked again before it counts as a failure.
     for attempt in range(EMPTY_RETRIES + 1):
+        if check_cancel:
+            check_cancel()
         pieces, reasoning, reason = [], 0, ""
         try:
             events = _chat_events(payload, env, check_cancel, on_text if check_cancel is None else None)
@@ -246,6 +248,27 @@ def text(prompt, *, model="", env=None, on_text=None, context=TEXT_CONTEXT,
                             on_text(piece)
             finally:
                 events.close()
+        except RuntimeError as exc:
+            if 'token repeat limit reached' not in str(exc).lower():
+                raise
+            # Never return a partial answer from an aborted stream or replay its
+            # looping output in the next prompt. Keep retries local and bounded.
+            if attempt == EMPTY_RETRIES:
+                raise RuntimeError(
+                    f'Ollama ({name}) kept repeating tokens after {attempt + 1} tries. '
+                    'This is a local generation loop, not a credit or usage quota. '
+                    'No complete answer was accepted. Try Auto again or choose another local model.'
+                ) from exc
+            if check_cancel:
+                check_cancel()
+            payload['options'].update(temperature=.7 + .1 * attempt,
+                                      repeat_penalty=1.1, repeat_last_n=128, seed=attempt + 1)
+            if name.lower().startswith('gpt-oss'):
+                payload['think'] = 'low'
+            if on_retry:
+                on_retry(f'Ollama hit a local repetition loop (not a usage quota); '
+                         f'discarding the partial answer and retrying locally ({attempt + 2}/{EMPTY_RETRIES + 1}).')
+            continue
         except (urllib.error.URLError, OSError) as exc:
             raise RuntimeError(f"Ollama failed: {_error_text(exc)}") from exc
         answer = re.sub(r"<think>.*?</think>", "", "".join(pieces), flags=re.S).strip()

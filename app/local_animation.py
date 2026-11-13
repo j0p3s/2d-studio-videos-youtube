@@ -42,6 +42,14 @@ eF,hF,eB,hB,kF,fF,kB,fB, in local rig units; use object spread to change the req
 Each pose is relative to the feet (head y about -208). Use outfit:{top:'hoodie',
 color:'#228c80'} consistently. Only add a prop if the storyboard/narration needs it; fix its
 position to the hand, surface or floor. Never invent drinking/coffee or random walking.
+CRITICAL GEOMETRY: joint coordinates are [x,y] arrays, NEVER {x,y} or joint.x/joint.y.
+Start seated actions from pose('sit'), not a stand pose with only the hip moved.
+Keep head-to-shoulder distance about 34, torso about 74, upper/forearms about 35–40
+local units. Move head/shoulders/hips together when changing body height. Never stretch
+an arm across the scene to reach a prop: move the prop or the whole character closer,
+then move the elbow and hand together within reach. Copy arrays before editing poses.
+Use only valid expressions: neutral, happy, smile, determined, thinking, worried, sad.
+Canvas coordinates must always be finite. Reset paths with beginPath before each shape.
 Use distinct anticipation, action and settle phases. Follow the storyboard's actual start
 and end states. Make purposeful limb motion, not only a breathing loop. No sliding feet.
 Draw a large expressive stick figure with a circular head, facial features and jointed limbs,
@@ -188,7 +196,8 @@ class LocalAnimation:
                                     context=int(self.env.get('OLLAMA_SCENE_CONTEXT', '16384')),
                                     thinking=self.env.get('OLLAMA_REPAIR_THINKING', 'medium') if repair else
                                              self.env.get('OLLAMA_ANIMATION_THINKING', 'medium'),
-                                    response_format='json', on_metrics=self.metrics.append)
+                                    response_format='json', on_metrics=self.metrics.append,
+                                    on_retry=self.log)
 
     def plan_story(self, shots, synopsis, style, look):
         prompt = PLAN_GUIDE + '\nStyle: ' + style + '\nLook notes: ' + look + '\nNarration: ' + synopsis

@@ -13,6 +13,7 @@ import openart_provider
 from ai_providers import GEMINI_API, gemini_api_key
 from ollama_provider import OLLAMA
 from openart_provider import OPENART
+from castworkshop_provider import CASTWORKSHOP
 
 DEFAULT = "(default)"   # shown for an empty setting: the provider's or the studio's default model
 TIMEOUT = 20
@@ -53,6 +54,8 @@ def openart(run, env, kind):
 def available(provider, env, *, openart_run=None, kind=None):
     """(names, note). names is None when the provider's list cannot be read; note says why."""
     try:
+        if provider == CASTWORKSHOP:
+            return None, 'CastWorkshop uses its installed Krea2/H3 workflow models, not a text-model selection'
         if provider == OLLAMA:
             if not ollama_provider.is_running(env):
                 return None, "Ollama is not running, so its models cannot be listed"

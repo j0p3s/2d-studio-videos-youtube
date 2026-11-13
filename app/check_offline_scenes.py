@@ -30,6 +30,9 @@ def audit(host):
 def accept_repair(before, after):
     if after['runtime_errors'] or after['missing'] or after.get('issues'):
         return False
+    # Removing the broken actor must not count as fixing its anatomy.
+    if before.get('figure_draws', 0) and not after.get('figure_draws', 0):
+        return False
     # Clear the thresholds, not just a tiny relative gain. Also reject regressions
     # in a previously healthy measurement when repairing a different problem.
     if after['motion_ratio'] < .008:
@@ -75,10 +78,16 @@ def check_project(host, *, request=None, log=print):
                   'shot ID/timing, character design, location and meaningful action. Improve physical '
                   'posing, contact, framing and anticipation/action/settle. Do not add unrelated props '
                   'or make a character slide offscreen. Camera drift alone does not count as acting.\n'
+                  'The spoken line is the source of truth: replace an unrelated action in the old '
+                  'scene/storyboard instead of preserving that mistake. Derive all poses and paths '
+                  'from t/info.p on every draw; never append points to a persistent array or depend '
+                  'on earlier frames. For low-motion findings, animate the actual subject visibly '
+                  'in the central action area, not just a tiny pen tip or a caption.\n'
                   'Shot: ' + json.dumps(by_id[sid]) + '\nStoryboard: ' +
                   json.dumps(saved.get('directions', {}).get(sid, {})) + '\nAudit: ' +
                   json.dumps(result['issues']) + '\nPrevious source:\n' + source[:18000])
         try:
+            log(f'{sid}: requesting a local repair; the replacement will be audited before acceptance.')
             description, code = scene_result(request(prompt, repair=True), sid)
             target.parent.mkdir(parents=True, exist_ok=True)
             temp = target.with_suffix('.audit.mjs')
@@ -121,7 +130,12 @@ def check_project(host, *, request=None, log=print):
             decisions.append({'id': sid, 'status': 'accepted_by_runtime_and_pixel_checks'})
         else:
             target.write_bytes(original) if original is not None else target.unlink(missing_ok=True)
-            decisions.append({'id': sid, 'status': 'reverted_no_measured_improvement'})
+            detail = '; '.join(candidate.get('issues', []))
+            if not detail:
+                detail = ('Character removed, or motion/detail thresholds not met: '
+                          f"figures={candidate.get('figure_draws', 'unknown')}, "
+                          f"motion={candidate.get('motion_ratio')}, detail={candidate.get('color_spread')}")
+            decisions.append({'id': sid, 'status': 'reverted_no_measured_improvement', 'detail': detail})
     save_json(plan_file, story)
     save_json(checkpoint, saved)
     final = audit(host) if any(x['status'].startswith('reverted') for x in decisions) else after
@@ -130,9 +144,9 @@ def check_project(host, *, request=None, log=print):
     report = p / 'build/scene_audit/report.json'
     save_json(report, final)
     log(f'Scene audit saved: {report}. Human review is still required.')
-    blocking = [x['id'] for x in final['shots'] if x['runtime_errors'] or x['missing']]
+    blocking = [x['id'] for x in final['shots'] if x['runtime_errors'] or x['missing'] or x.get('geometry_findings')]
     if blocking:
-        raise RuntimeError('Unresolved scene runtime failures: ' + ', '.join(blocking))
+        raise RuntimeError('Unresolved scene runtime/geometry failures: ' + ', '.join(blocking))
     unresolved = [x['id'] for x in final['shots'] if x['issues'] and
                   not complete.get(x['id'], {}).get('manual')]
     if request is not None and unresolved:
@@ -191,7 +205,8 @@ def main():
                 if not model and metrics_file.exists():
                     model = json.loads(metrics_file.read_text(encoding='utf-8')).get('model', '')
                 local = LocalAnimation(studio, project.name, python, run, env, model, lambda: None, print)
-                record['audit'] = check_project(local.host, request=local.request if args.repair else None)
+                record['audit'] = check_project(local.host, request=local.request if args.repair else None,
+                                                log=lambda message: print(message, flush=True))
                 if args.export:
                     import ollama_provider
                     ollama_provider.release_model(model, env)

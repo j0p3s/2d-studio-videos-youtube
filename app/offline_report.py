@@ -8,7 +8,7 @@ from urllib.parse import quote
 
 
 DECISIONS = {
-    'accepted_by_runtime_and_pixel_checks': 'Repair passed the checks',
+    'accepted_by_runtime_and_pixel_checks': 'Repair cleared technical checks; review the preview',
     'reverted_no_measured_improvement': 'Repair rejected; original restored',
     'repair_failed': 'Repair failed; original kept',
     'manual_scene_preserved': 'Approved scene preserved',
@@ -58,7 +58,7 @@ def write_report(folder, records, *, started, finished=False, error=None, repair
         issues = [s for s in shots if s.get('issues')]
         state = ('Failed' if record.get('status') == 'failed' else 'Cancelled' if record.get('status') == 'cancelled'
                  else 'Checking' if record.get('status') == 'checking' else 'Needs review' if issues
-                 else 'Checks passed' if shots else 'No scene results')
+                 else 'Technical checks clear · visual review required' if shots else 'No scene results')
         tone = 'bad' if record.get('error') else 'warn' if issues else 'good'
         details = []
         decisions = {}
@@ -67,7 +67,7 @@ def write_report(folder, records, *, started, finished=False, error=None, repair
         for scene in shots:
             sid = scene['id']
             warnings = ''.join('<li>' + h(x) + '</li>' for x in scene.get('issues', []))
-            warnings = '<ul class="issues">' + warnings + '</ul>' if warnings else '<p class="muted">No runtime, motion or detail warnings detected.</p>'
+            warnings = '<ul class="issues">' + warnings + '</ul>' if warnings else '<p class="muted">No detected technical defects. Acting, prop contact and narrative relevance still require visual review.</p>'
             changes = ''.join('<p class="decision">' + h(DECISIONS.get(d['status'], d['status'])) +
                               (': ' + h(d['detail']) if d.get('detail') else '') + '</p>' for d in decisions.get(sid, []))
             key = hashlib.sha256((str(record['path']) + sid).encode()).hexdigest()[:18]
@@ -83,7 +83,7 @@ def write_report(folder, records, *, started, finished=False, error=None, repair
                     url = h(image + '?run=' + str(started))
                     images.append(f'<figure><a href="{url}" target="_blank" rel="noopener"><img src="{url}" loading="lazy" alt="{h(sid)} at {h(caption)}"></a><figcaption>{h(caption)}</figcaption></figure>')
             metrics = f"{scene.get('frames_checked', '—')} frames checked · Motion {scene.get('motion_ratio', '—')} · Detail {scene.get('color_spread', '—')}"
-            details.append(f'<details{" open" if scene.get("issues") else ""}><summary><span>{h(sid)}</span><span class="badge {"warn" if scene.get("issues") else "good"}">{"Needs review" if scene.get("issues") else "Passed"}</span></summary><p class="muted">{h(metrics)}</p>{warnings}{changes}<div class="filmstrip">{"".join(images)}</div></details>')
+            details.append(f'<details open><summary><span>{h(sid)}</span><span class="badge warn">{"Needs repair / review" if scene.get("issues") else "Visual review required"}</span></summary><p class="muted">{h(metrics)}</p>{warnings}{changes}<div class="filmstrip">{"".join(images)}</div></details>')
         message = '<pre class="error">' + h(record['error']) + '</pre>' if record.get('error') else ''
         if not shots:
             message += '<p class="muted">No current scene details are available. Earlier audit results were not substituted for this run.</p>'
@@ -100,7 +100,7 @@ def write_report(folder, records, *, started, finished=False, error=None, repair
 <div class="eyebrow">2D Animation Studio · local report</div><h1>Offline animation checks</h1>
 <span class="badge {color}">{h(title)}</span><p class="muted">Updated {h(stamp.strftime('%d %b %Y, %H:%M:%S'))} ({zone}). Rebuilt each launcher or CLI run.</p>
 <div class="stats"><div class="stat"><b>{len(records)}</b><span>Projects</span></div><div class="stat"><b>{total_scenes}</b><span>Scenes checked</span></div><div class="stat"><b>{flagged}</b><span>Scenes flagged</span></div><div class="stat"><b>{failed}</b><span>Projects stopped</span></div></div>
-<div class="note"><b>What this result means</b><p>Checks cover runtime failures, motion after camera alignment and visible scene detail. A pass does not establish good acting, narrative relevance or visual quality. Review the previews and finished video.</p><p>Repairs: <b>{'enabled' if repair else 'off (audit only)'}</b> · Video export: <b>{'requested' if export else 'not requested; existing MP4s are unchanged'}</b>. Rejected repairs restore the original code. Approved scenes are protected.</p></div>
+<div class="note"><b>What this result means</b><p>Checks cover every frame for runtime errors, malformed rig joints, shared-pose mutation, invalid drawing coordinates and accidentally connected circles, plus sampled motion and detail. Technical clearance does not establish good acting, prop contact, narrative relevance or visual quality. Review the previews and finished video.</p><p>Repairs: <b>{'enabled' if repair else 'off (audit only)'}</b> · Video export: <b>{'requested' if export else 'not requested; existing MP4s are unchanged'}</b>. Rejected repairs restore the original code. Approved scenes are protected.</p></div>
 {fatal}{empty}{''.join(cards)}<footer>Motion measures residual pixel changes; detail measures color spread. Report entry points: index.html and .index.html. No external scripts, fonts or network assets.</footer>
 </main></body></html>'''
     for name in ('index.html', '.index.html'):

@@ -48,7 +48,9 @@ class OfflineReportTests(unittest.TestCase):
             assets=list((root/'report/assets').iterdir())
             self.assertEqual(len(assets),1)
             self.assertEqual(assets[0].read_bytes(),b'image')
-            self.assertIn('Checks passed',p.read_text(encoding='utf-8'))
+            self.assertIn('Technical checks clear',p.read_text(encoding='utf-8'))
+            self.assertIn('Visual review required',p.read_text(encoding='utf-8'))
+            self.assertNotIn('>Passed<',p.read_text(encoding='utf-8'))
 
     def test_fatal_setup_error_has_fresh_report_instead_of_empty_success(self):
         with tempfile.TemporaryDirectory() as folder:

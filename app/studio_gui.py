@@ -22,6 +22,8 @@ from host_render import HostAnimation
 from local_animation import LocalAnimation
 import openart_provider
 import shots_video
+import castworkshop_provider
+from castworkshop_provider import CASTWORKSHOP
 from parallel_commands import CommandGroup
 from openart_defaults import migrate_defaults, build_options, RETENTION_BRIEF, DEFAULT_RESOLUTION
 from openart_provider import OPENART
@@ -831,6 +833,8 @@ class Studio(ctk.CTk):
                       else f"Video: {s.get('title', '—')}\n")
                    + f"Voice: {engine} · {voice}\n"
                    + credit_note
+                   + ('CastWorkshop: local Krea2/H3 visual clips; original narration retained; models stay in their current folder.\n'
+                      if self.settings.get('animation_provider') == CASTWORKSHOP else '')
                    + f"Video: {self.opt_aspect.get()} · {self.opt_res.get()} · {self.opt_style.get()} · parts {self.opt_parts.get()}\n\n"
                    "Settings come from the Script, Voiceover and Animate pages — change them there first if needed.\n"
                    "The animation step can take a long time. Start?")
@@ -975,6 +979,24 @@ class Studio(ctk.CTk):
         # A name that is not downloaded yet is allowed here: "Download offline model" fetches it.
         self.ent_ollama = self._model_box(row_off, "ollama_model", 240, lambda: OLLAMA, may_be_missing=True)
         self.ent_ollama.pack(side="left", padx=6)
+        row_cast = ctk.CTkFrame(ai, fg_color='transparent')
+        row_cast.pack(fill='x', padx=12, pady=5)
+        ctk.CTkLabel(row_cast, text='CastWorkshop (local)', width=200, anchor='w').pack(side='left')
+        self.ent_cast_root = ctk.CTkEntry(row_cast, width=310)
+        self.ent_cast_root.insert(0, self.settings.get('castworkshop_root') or castworkshop_provider.default_root(HOME))
+        self.ent_cast_root.pack(side='left', padx=6)
+        self.ent_cast_url = ctk.CTkEntry(row_cast, width=215)
+        self.ent_cast_url.insert(0, self.settings.get('castworkshop_url') or castworkshop_provider.DEFAULT_URL)
+        self.ent_cast_url.pack(side='left', padx=6)
+        for entry in (self.ent_cast_root, self.ent_cast_url):
+            entry.bind('<FocusOut>', self._save_castworkshop)
+            entry.bind('<Return>', self._save_castworkshop)
+        row_cast_actions = ctk.CTkFrame(ai, fg_color='transparent')
+        row_cast_actions.pack(fill='x', padx=12, pady=5)
+        ctk.CTkButton(row_cast_actions, text='Check CastWorkshop', command=self.check_castworkshop).pack(side='left', padx=4)
+        ctk.CTkButton(row_cast_actions, text='Finish CastWorkshop setup', command=self.setup_castworkshop).pack(side='left', padx=4)
+        ctk.CTkLabel(row_cast_actions, text='Local visual clips + Studio narration. No Telegram. No model migration.',
+                    text_color=MUTED).pack(side='left', padx=8)
         row_oa = ctk.CTkFrame(ai, fg_color="transparent")
         row_oa.pack(fill="x", padx=12, pady=5)
         ctk.CTkLabel(row_oa, text="OpenArt (AI shots)", width=200, anchor="w").pack(side="left")
@@ -1187,6 +1209,43 @@ class Studio(ctk.CTk):
         if hasattr(self, "opt_engine"):
             self._on_engine(self.settings.get("engine"))
         self._refresh_offline_badge()
+
+    def _save_castworkshop(self, *_):
+        self.settings['castworkshop_root'] = self.ent_cast_root.get().strip()
+        self.settings['castworkshop_url'] = self.ent_cast_url.get().strip()
+        save_settings(self.settings)
+
+    def check_castworkshop(self):
+        self._save_castworkshop()
+        def work():
+            castworkshop_provider.local_url(self.settings['castworkshop_url'])
+            problems = castworkshop_provider.readiness(self.settings['castworkshop_root'])
+            text = ('\n'.join(problems) if problems else
+                    'Workflow/model files are ready. A real GPU generation is still required to verify compatibility.')
+            self.log(self.setup_log, text)
+            return text
+        self.run_job('Checking CastWorkshop', work,
+                     lambda text: messagebox.showinfo('CastWorkshop', text[:2500]))
+
+    def setup_castworkshop(self):
+        self._save_castworkshop()
+        root = Path(self.settings['castworkshop_root'])
+        script = root / 'test_launcher.py'
+        python = root / 'CastWorkshop/.venv/Scripts/python.exe'
+        if not script.is_file() or not python.is_file():
+            messagebox.showinfo('CastWorkshop setup', 'Use the existing D: CastWorkshop-Test folder with Launch-Test.cmd. '
+                               'This button completes that installation; it does not migrate it.')
+            return
+        if self.offline():
+            messagebox.showinfo('CastWorkshop setup', 'Dependency installation needs internet. Turn off Always work offline '
+                               'for setup, then enable it again for local generation.')
+            return
+        def work():
+            code = self.run_cmd([str(python), str(script), '--setup-only'], cwd=str(root),
+                                on_line=lambda line: self.log(self.setup_log, line))
+            if code:
+                raise RuntimeError('CastWorkshop setup stopped. Read the Setup log and D: logs folder.')
+        self.run_job('Completing CastWorkshop setup', work, lambda _: self.check_castworkshop())
 
     def _refresh_offline_badge(self):
         if hasattr(self, "lbl_offline"):
@@ -1452,7 +1511,7 @@ class Studio(ctk.CTk):
                                          command=self._on_sub)
         self.opt_sub.grid(row=0, column=2, padx=8)
         self.ent_custom = ctk.CTkEntry(top, placeholder_text="Type your own sub-niche", width=230)
-        self.opt_len = ctk.CTkOptionMenu(top, values=["Shorts 60s", "2 min", "3-4 min", "5 min", "6 min",
+        self.opt_len = ctk.CTkOptionMenu(top, values=["Shorts 15s test", "Shorts 60s", "2 min", "3-4 min", "5 min", "6 min",
                                                       "8 min", "10 min", "12 min"], width=110)
         self.opt_len.set("Shorts 60s")   # default length (user request, 2026-11-13)
         self.opt_len.grid(row=0, column=4, padx=8)
@@ -1557,7 +1616,9 @@ class Studio(ctk.CTk):
         main, sub = self.s.get("niche_main") or self._niche()[0], self.s.get("niche_sub") or self._niche()[1]
         choice = self.opt_len.get()
         shorts = choice.startswith("Shorts")
-        if shorts:
+        if choice == 'Shorts 15s test':
+            length = 'This is a 15-second local pipeline test: one clear idea, about 30-35 words. No introduction.'
+        elif shorts:
             length = ("This is a YouTube SHORTS version: 60 seconds, about 140-160 words, same structure compressed "
                       "(hook in the first 2 seconds).")
         elif choice == "3-4 min":
@@ -1569,7 +1630,7 @@ class Studio(ctk.CTk):
         prompt = (f"{scriptforge_prompt()}\n\n---\nYou are running inside a desktop app, not a chat. The user picked main "
                   f"niche {main}, sub-niche {sub}, and chose this idea:\nTitle: {idea.get('title')}\nHook: {idea.get('hook')}\n"
                   f"Do STEP 3 now. {length}\n\n{self.SCRIPT_FORMAT}")
-        words = 150 if shorts else 525 if choice == "3-4 min" else int(choice.split()[0]) * 150
+        words = 35 if choice == 'Shorts 15s test' else 150 if shorts else 525 if choice == "3-4 min" else int(choice.split()[0]) * 150
         used = self.s.setdefault("used_ideas", [])
         if idea.get("title") and idea["title"] not in used:
             used.append(idea["title"])
@@ -2252,6 +2313,10 @@ FINAL_VIDEO: <absolute path to the mp4>"""
             return 0.0
 
     def suggest_characters(self):
+        if self.settings.get('animation_provider') == CASTWORKSHOP:
+            messagebox.showinfo('CastWorkshop looks', 'Describe the character and visual style in Look notes. '
+                               'CastWorkshop generates Krea2 reference images during the video build.')
+            return
         if not self.s.get("voice"):
             messagebox.showinfo("Character styles", "Make the voiceover first (② Voiceover).")
             return
@@ -2330,6 +2395,8 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
             ctk.CTkButton(card, text="Use this style", command=choose).pack(anchor="e", padx=12, pady=10)
 
     def make_video(self):
+        if self.settings.get('animation_provider') == CASTWORKSHOP:
+            return self._make_video_castworkshop()
         if self.settings.get("animation_provider") == OPENART:
             return self._make_video_openart()
         try:
@@ -2435,6 +2502,74 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
         else:
             messagebox.showwarning("Animate", "Animation agent finished but no MP4 was found. Read the log, "
                                               "or continue in the interactive agent window.")
+
+    def _make_video_castworkshop(self):
+        try:
+            self._video_prompt()
+            self._save_castworkshop()
+            root, url = self.settings['castworkshop_root'], self.settings['castworkshop_url']
+            castworkshop_provider.local_url(url)
+            problems = castworkshop_provider.readiness(root)
+            if problems:
+                raise RuntimeError('CastWorkshop is not ready. Use Setup → Finish CastWorkshop setup.\n' + '\n'.join(problems[:10]))
+            duration = self._voice_duration()
+            if duration <= 0:
+                raise RuntimeError('Could not read the narration duration. Make the voiceover again.')
+        except (RuntimeError, ValueError, OSError) as exc:
+            messagebox.showinfo('CastWorkshop', str(exc))
+            return
+        project = self._workdir()
+        narration = self.s.get('narration') or Path(self.s['script_file']).read_text(encoding='utf-8')
+        aspect, resolution, look = self.opt_aspect.get(), self.opt_res.get(), self.ent_look.get().strip()
+        voice = self.s['voice']
+        music = self.music_file if self.music_file and self.opt_music.get().startswith('Track') else None
+        title = self.s.get('title') or self.s['slug']
+        self.anim_log.delete('1.0', 'end')
+        self.log(self.anim_log, 'CastWorkshop local: Krea2 reference images → 8s H3 visual clips → Studio narration. '
+                               'Sequential GPU jobs; original generated audio is replaced by the selected narration. '
+                               'H3 uses its preset generation size; final export uses the chosen resolution.')
+        if self.chk_capt.get() or self.chk_sfx.get() or self.opt_music.get() == 'Generated by mood':
+            self.log(self.anim_log, 'This integration supports narration and an optional music track. '
+                                   'Burned-in captions, generated music and authored SFX are not implemented.')
+        def work():
+            # Protect cached jobs from ShotsBuild's clean rebuild if inputs changed.
+            identity = hashlib.sha256(json.dumps({'voice': hashlib.sha256(Path(voice).read_bytes()).hexdigest(),
+                'narration': narration, 'aspect': aspect, 'look': look, 'root': root,
+                'workflows': [hashlib.sha256((castworkshop_provider.locations(root)[2] / 'worker/workflows' / name).read_bytes()).hexdigest()
+                              for name in castworkshop_provider.WORKFLOWS]}, sort_keys=True).encode()).hexdigest()
+            marker = project / 'castworkshop-build.json'
+            if marker.exists() and json.loads(marker.read_text()).get('identity') != identity:
+                raise RuntimeError('CastWorkshop inputs changed. Start a fresh project to preserve the existing generated media and job IDs.')
+            castworkshop_provider.save(marker, {'identity': identity})
+            if self._job_ai.get('script_provider') == OLLAMA or self.offline():
+                ollama_provider.release_model(self._job_ai.get('script_model') or self._job_ai.get('ollama_model') or '', ENV)
+            def run(command):
+                lines = []
+                rc = self.run_cmd(command, cwd=str(project), on_line=lambda line: lines.append(line))
+                return rc, '\n'.join(lines)
+            def ask(prompt):
+                answer = self.ask_ai(prompt + '\nCastWorkshop motion override: each motion field must describe '
+                                     'one concrete subject action matching that shot narration, plus a restrained '
+                                     'camera move. Do not use camera drift as the only action. Keep all people '
+                                     'silent: the separately recorded narrator supplies speech.', box=self.anim_log)
+                if self._job_ai.get('script_provider') == OLLAMA or self.offline():
+                    ollama_provider.release_model(self._job_ai.get('script_model') or self._job_ai.get('ollama_model') or '', ENV)
+                return answer
+            with castworkshop_provider.Session(root, url, project / 'castworkshop-server', env=ENV,
+                    check=self.check_cancel, log=lambda msg: self.log(self.anim_log, msg)) as session:
+                build = shots_video.ShotsBuild(project, folder='castworkshop', make_still=session.make_still,
+                    make_clip=session.make_clip, ask=ask, run=run, progress=self.prog,
+                    check=self.check_cancel, log=lambda msg: self.log(self.anim_log, msg))
+                final = build.execute(voice=voice, duration=duration, narration=narration, title=title,
+                    aspect=aspect, resolution=resolution, look=look, seconds=castworkshop_provider.CLIP_SECONDS,
+                    motion=True, parallel=1, music=music, out_name=title)
+                rc, raw = run(['ffprobe', '-v', 'error', '-show_entries', 'stream=codec_type:format=duration', '-of', 'json', str(final)])
+                info = json.loads(raw) if not rc else {}
+                if ({'audio', 'video'} - {s['codec_type'] for s in info.get('streams', [])}
+                        or abs(float(info.get('format', {}).get('duration', 0)) - duration) > 1):
+                    raise RuntimeError('CastWorkshop export failed audio/video/duration validation.')
+                return final
+        self.run_job('Making the video (CastWorkshop)', work, self._video_done)
 
     # ---- OpenArt: AI-generated shots cut to the narration (no animation kit, no agent)
     def _openart_ready(self):

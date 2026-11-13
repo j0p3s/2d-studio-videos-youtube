@@ -16,10 +16,11 @@ from pathlib import Path
 import ollama_provider
 from ollama_provider import OLLAMA
 from openart_provider import OPENART
+from castworkshop_provider import CASTWORKSHOP
 
 GEMINI_API = "Gemini API"
-PROVIDERS = ("Claude", "OpenAI (Codex)", "Gemini", GEMINI_API, OLLAMA, OPENART)
-TEXT_PROVIDERS = tuple(p for p in PROVIDERS if p != OPENART)   # OpenArt makes images and video, not scripts
+PROVIDERS = ("Claude", "OpenAI (Codex)", "Gemini", GEMINI_API, OLLAMA, OPENART, CASTWORKSHOP)
+TEXT_PROVIDERS = tuple(p for p in PROVIDERS if p not in (OPENART, CASTWORKSHOP))
 GEMINI_API_MODEL = "gemini-3.8-flash"
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 GEMINI_API_TIMEOUT = 600  # long scripts take minutes to generate

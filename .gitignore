@@ -31,3 +31,12 @@ Android-App/
 
 # Local scene-check dashboards and copied previews
 /reports/
+
+# Portable CastWorkshop runtime, private configuration and downloaded assets
+/integrations/castworkshop/apps/
+/integrations/castworkshop/runtime/
+/integrations/castworkshop/models/
+/integrations/castworkshop/bin/
+/integrations/castworkshop/cache/
+/integrations/castworkshop/logs/
+/integrations/castworkshop/tmp/

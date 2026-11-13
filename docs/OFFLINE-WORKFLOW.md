@@ -41,8 +41,14 @@ for the automatic path. Not every model/backend implements named reasoning contr
 6. The scene checker draws every output frame and captures up to eight moments per shot.
    It checks runtime errors, missing modules, nearly uniform action areas and residual motion
    after translation/zoom alignment. Captions are excluded from its action-area measurements.
+   Audit-only engine instrumentation also validates finite joint arrays, anatomical segment
+   lengths against the shipped pose library, shared preset mutation, invalid Canvas coordinates
+   and distant circles joined into accidental filled polygons. Findings include frame/time.
+   Runtime and geometry failures block export even in audit-only mode with `--export`.
+   Normal engine files are not modified by this instrumentation.
 7. Flagged generated scenes get a targeted local repair attempt with backup, syntax check and
    another browser audit. A replacement must clear all warnings and motion/detail thresholds.
+   A repair cannot remove a previously present rig character just to eliminate its errors.
    Rejected changes are rolled back. Unresolved generated-scene flags stop export for review.
 8. The installed renderer/mixer produce `out/final.mp4`. Stream and duration checks require
    audio and video; an arbitrary model-created substitute MP4 is not accepted as the final result.
@@ -51,6 +57,10 @@ The checker is a diagnostic aid, not an aesthetic judge. Global-motion alignment
 camera-only false passes but cannot guarantee real acting or correct physical contact.
 Narrative relevance and visual quality still require human review. Reports retain
 `visually_approved: false`; do not interpret a successful runtime check as visual approval.
+The HTML report expands previews by default and labels clear scenes **Visual review required**.
+Rig geometry checks apply to the existing `drawFigure` rig; arbitrary custom drawing and
+semantic prop contact are not fully assessed. Suspected defects can require human correction
+when the local model's single repair attempt does not clear all checks.
 
 ## Visual direction and approved scenes
 
@@ -128,6 +138,14 @@ do not replace the original failure. Stop is checked while waiting for Ollama co
 headers/tokens and aborts the active socket; queued output is bounded. Stop does not imply
 remote services outside Ollama (for example an already submitted OpenArt job) were cancelled.
 
+`prediction aborted, token repeat limit reached` means the local model entered a repetition
+loop, not that offline credits or a usage allowance ran out. Studio discards the aborted
+answer and retries locally within a three-attempt budget, changing the sampling seed and
+repetition settings; GPT-OSS recovery uses low reasoning. Animation logs show recovery
+attempts. Stop remains responsive. If recovery fails, no partial answer is accepted and
+the error explains the local loop. Restart Studio after updating Python code, then press
+Auto again to resume the saved project. Recovery cannot guarantee that a model will finish.
+
 ## Model and memory configuration
 
 Studio `.env` overrides:
@@ -168,11 +186,11 @@ package from Ollama Flash Attention; installing it does not accelerate Ollama re
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s app -p "test_*.py"
-node --test app\video_encoder.test.mjs app\offline_motion.test.mjs
+node --test app\video_encoder.test.mjs app\offline_motion.test.mjs app\offline_geometry.test.mjs
 git diff --check
 ```
 
-Latest verified results: 121 Python tests and 6 Node tests pass. Stalled-header/token tests
+Latest verified results: 122 Python tests and 13 Node tests pass. Stalled-header/token tests
 verify cancellation under 1.5 seconds in the local test server. A synthetic frame-11 error
 outside snapshot times was detected by the full-frame audit. A real approved-video audit
 checked 1,624 frames and 120 snapshots without runtime failures or visual flags. These are

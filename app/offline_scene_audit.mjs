@@ -4,6 +4,7 @@ import path from 'node:path';
 import http from 'node:http';
 import {createRequire} from 'node:module';
 import {motionMetrics} from './offline_motion.mjs';
+import {installCanvasAudit, instrumentModule} from './offline_geometry.mjs';
 const [studioArg, projectArg] = process.argv.slice(2);
 const studio=path.resolve(studioArg), project=path.resolve(projectArg);
 const {chromium}=createRequire(path.join(studio,'package.json'))('playwright');
@@ -15,10 +16,15 @@ const types={'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript
 const server=http.createServer((req,res)=>{
  try{
   const url=decodeURIComponent(req.url.split('?')[0]);
+  if(url==='/__audit_geometry.mjs'){res.setHeader('Content-Type','text/javascript');return res.end(fs.readFileSync(new URL('./offline_geometry.mjs',import.meta.url)))}
   if(url==='/__manifest'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify(manifest(path.join(project,'scenes'),'/project/scenes')))}
   const root=url.startsWith('/project/')?project:studio;
   const p=path.resolve(root,url.startsWith('/project/')?url.slice(9):'.'+url);
   if(!within(root,p)||!fs.existsSync(p)||!fs.statSync(p).isFile()){res.writeHead(404);return res.end()}
+  if(url==='/engine/rig2d.js'||url==='/engine/core.js'){
+   res.setHeader('Content-Type','text/javascript');
+   return res.end(instrumentModule(fs.readFileSync(p,'utf8'),url.endsWith('rig2d.js')?'rig':'core'));
+  }
   res.setHeader('Content-Type',types[path.extname(p)]||'application/octet-stream');fs.createReadStream(p).pipe(res);
  }catch{res.writeHead(400);res.end()}
 });
@@ -29,6 +35,22 @@ try{
  const chrome=['C:/Program Files/Google/Chrome/Application/chrome.exe','C:/Program Files (x86)/Google/Chrome/Application/chrome.exe'].some(p=>fs.existsSync(p));
  browser=await chromium.launch({...(process.env.PW_CHANNEL?{channel:process.env.PW_CHANNEL}:bundled?{executablePath:chromium.executablePath()}:{channel:chrome?'chrome':'msedge'}),args:['--enable-unsafe-swiftshader']});
  const page=await browser.newPage();const pageErrors=[];page.on('pageerror',e=>pageErrors.push(e.message));
+ await page.addInitScript(() => {
+  window.__auditGeometry = {};
+  window.__auditFigureCounts = {};
+  window.__auditFigureSeen = () => {
+   const id=window.__auditShot;
+   if(id)window.__auditFigureCounts[id]=(window.__auditFigureCounts[id]||0)+1;
+  };
+  window.__auditFinding = message => {
+   const id=window.__auditShot;if(!id)return;
+   const findings=window.__auditGeometry[id]??={};
+   // One bounded record per distinct defect, with its first actual output frame.
+   const key=message.split(': length ')[0];
+   if(!findings[key])findings[key]={message,frame:window.__auditFrame??0};
+  };
+ });
+ await page.addInitScript('('+installCanvasAudit.toString()+')(window)');
  // Scene code is local; audit must not contact remote assets/services.
  await page.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
  await page.goto(`http://127.0.0.1:${server.address().port}/player.html?scale=0.35`);
@@ -49,12 +71,12 @@ try{
   for(const frame of sampleFrames){
    while(next<=frame){
     const end=Math.min(frame,next+23);
-    await page.evaluate(({from,to})=>{for(let f=from;f<=to;f++)window.renderFrame(f)},{from:next,to:end});
+    await page.evaluate(({from,to})=>{for(let f=from;f<=to;f++){window.__auditFrame=f;window.renderFrame(f)}},{from:next,to:end});
     next=end+1;
    }
    const time=frame/fps;
    const sample=await page.evaluate(({frame})=>{
-    window.renderFrame(frame);
+    window.__auditFrame=frame;window.renderFrame(frame);
     const c=document.querySelector('#main'),ctx=c.getContext('2d');
     const data=ctx.getImageData(0,0,c.width,c.height).data;
     const pixels=[];for(let y=0;y<32;y++)for(let x=0;x<32;x++){
@@ -69,7 +91,7 @@ try{
   }
   while(next<=last){
    const end=Math.min(last,next+23);
-   await page.evaluate(({from,to})=>{for(let f=from;f<=to;f++)window.renderFrame(f)},{from:next,to:end});
+   await page.evaluate(({from,to})=>{for(let f=from;f<=to;f++){window.__auditFrame=f;window.renderFrame(f)}},{from:next,to:end});
    next=end+1;
   }
   const changes=samples.slice(1).map((s,i)=>motionMetrics(samples[i].pixels,s.pixels));
@@ -85,13 +107,19 @@ try{
    runtime_errors:errors,missing:!shot.ok,images:samples.map(s=>s.image)});
  }
  const allErrors=await page.evaluate(()=>[...window.ERRORS]);
+ const geometry=await page.evaluate(()=>window.__auditGeometry);
+ const figures=await page.evaluate(()=>window.__auditFigureCounts);
  for(const result of results){
+  result.figure_draws=figures[result.id]||0;
+  result.geometry_findings=Object.values(geometry[result.id]||{});
+  for(const finding of result.geometry_findings)
+   result.issues.push(`Frame ${finding.frame} (${(finding.frame/fps).toFixed(2)}s): ${finding.message}`);
   for(const error of allErrors.filter(e=>e.includes(result.id))){
    if(!result.runtime_errors.includes(error))result.runtime_errors.push(error);
    if(!result.issues.includes(error))result.issues.push(error);
   }
  }
- console.log('OFFLINE_AUDIT_JSON:'+JSON.stringify({shots:results,page_errors:pageErrors,
+ console.log('OFFLINE_AUDIT_JSON:'+JSON.stringify({audit_version:2,shots:results,page_errors:pageErrors,
   limitation:'All-frame runtime checks and camera-compensated snapshot metrics cannot establish semantic relevance, contact or visual quality. Human review is still required.'}));
 }catch(e){console.error('AUDIT FAILED:',e.message);process.exitCode=1}
 finally{if(browser)await browser.close();await new Promise(r=>server.close(r))}

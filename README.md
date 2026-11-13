@@ -1,8 +1,14 @@
 # 2D Animation Studio (Windows)
 
-A Windows desktop app for narrated stick-figure videos with local Ollama or connected AI providers, optional OpenArt shots and YouTube upload. Offline animation uses an app-managed storyboard, scene generation, checks and export pipeline.
+A Windows desktop app for narrated stick-figure videos with local Ollama or connected AI providers, optional OpenArt or local CastWorkshop shots and YouTube upload. Offline animation uses an app-managed storyboard, scene generation, checks and export pipeline.
 
 ## Install
+
+Optional CastWorkshop packaging is isolated under
+[`integrations/castworkshop/`](integrations/castworkshop/README.md). Its launcher prepares
+a manual, verified portable copy after you finish testing the original D: installation;
+it never migrates automatically when downloads finish.
+
 0. The animation kit is not part of this repository. Get `GrowKaz_Stickman.plugin` and put it in the `plugin\` folder beside the installer, or in your Downloads folder.
 1. Double-click **`Install-2D-Studio.cmd`**. It installs whatever is missing:
    - Git, Node.js LTS, Python 3.12 and FFmpeg (through winget)
@@ -23,6 +29,7 @@ A Windows desktop app for narrated stick-figure videos with local Ollama or conn
 | Gemini API | Configure `GEMINI_API_KEY` in the studio `.env` | Text uses the API directly; tool-based animation uses the Gemini CLI with that key. |
 | Ollama (offline) | Install Ollama and download a model once | Local API for ideas/scripts and automatic animation; no Claude login or CLI agent needed for automatic animation. Optional tool-based design/agent operations retain the CLI bridge. |
 | OpenArt (AI video) | **Install OpenArt**, then **Sign in: OpenArt** (browser login, no API key) | Animation only. The official `openart` CLI generates one AI still per shot and optionally a short clip from it; the studio cuts the shots to the narration with FFmpeg. No animation kit or agent involved. |
+| CastWorkshop (local) | Existing CastWorkshop + ComfyUI installation; **Check CastWorkshop** / **Finish CastWorkshop setup** | Animation only. Local Krea2/H3 visual clips assembled under Studio's selected narration. No Telegram or VPS; current D: models stay in place. |
 
 Provider/model selections are saved; each active job keeps its initial selection. A blank model uses the adapter default; API/Ollama requests require an available or installed model. Setup offers model lists when supported. Voice engines are selected separately. CLI authentication is managed by the vendor rather than copied into `settings.json`. YouTube upload needs a connection and the Publish action.
 
@@ -47,6 +54,16 @@ Close the GUI before updating. Update the entire `app` folder and root launchers
 | **② Voiceover** | English speech with Piper, Qwen3 or Edge, or import a recording verified as English. |
 | **③ Animate** | Automatic Ollama: alignment → whole-story direction → bounded 2D scene requests → all-frame runtime/motion checks → render/mix. Agent providers can create 2D/3D scenes in passes. Optional character-design/interactive tools use provider adapters. OpenArt instead generates images/clips and assembles them to narration. |
 | **④ Upload** | Makes a thumbnail from a video frame with big text on it, fills in the title, description and tags from the script, and uploads to YouTube (private, unlisted, public or scheduled). |
+
+## CastWorkshop (local AI-generated shots)
+
+Restart Studio, select **Setup → Animation & character designs → CastWorkshop (local)**,
+and point its folder at `D:\CastWorkshop-Test`. Use **Check CastWorkshop** and complete
+missing dependencies before rendering. To test through Auto, choose **Shorts 15s test**
+on Script and **Auto → Start fresh**. The backend generates sequential 8-second H3 visual
+clips and retains the original Studio narration. No models are moved and Telegram is
+not used. GPU/model acceptance is still pending completed downloads and a real render.
+See [CastWorkshop setup, recovery and current limits](docs/CASTWORKSHOP.md).
 
 ## OpenArt (AI-generated shots)
 **Smooth local assembly:** scene boundaries now use short cross-dissolves (~0.42 seconds), with extra overlap handles that preserve the narration timeline. Short AI clips use slow motion to fill a scene instead of freezing their last frame; stills use continuous camera motion instead of abrupt crop resets. Boundaries are processed two scenes at a time to avoid a large all-scenes filter graph. This adds local encoding work, not paid generation requests, when the source images/clips are already cached. To improve an existing completed video, use **Animate → Make the video** again; Auto reuses a completed final MP4 instead of rebuilding it. Pauses baked into an original source clip cannot be removed by this timing adjustment alone.
@@ -143,9 +160,15 @@ Restart the studio after updating. Every automatic offline animation now runs th
 scene checker before final export. It draws every frame for runtime checks and captures up
 to eight snapshots per shot for motion/detail checks, without counting captions. It aligns
 frames for translation/zoom before measuring residual motion, reducing camera-only false passes.
+The audit also inspects rig joints on every frame: malformed/non-finite coordinates,
+detached heads, severely stretched/collapsed segments and shared-pose mutations are flagged.
+Canvas diagnostics catch invalid coordinates and distant circles accidentally joined into
+filled polygons. Findings include the first frame/time and concrete repair guidance.
+These checks run only in the audit browser; the installed rendering engine is unchanged.
 Flagged scenes get one targeted local-model repair attempt, Node syntax checking and another
 real browser audit. A replacement must clear all audit warnings, residual motion >=0.008 and
-color spread >=9, not merely improve slightly. Rejected changes are rolled back. Remaining
+color spread >=9, not merely improve slightly. Rejected changes are rolled back. Existing
+rig characters must also be retained; deleting the actor does not count as a repair. Remaining
 warnings on generated scenes stop repair/export for review; approved/manual scenes stay protected
 from quality-heuristic rewrites. Originals are saved under `build/scene_audit/backups/`.
 
@@ -157,8 +180,9 @@ For existing offline projects, double-click `Check-Offline-Animations.cmd`, or r
 ```
 
 Each launcher/CLI run rebuilds `reports/offline-animations/.index.html` and the matching
-`index.html`. The HTML dashboard explains pass/review/failure states, repair decisions and
-errors, and includes expandable scene previews copied into its local `assets` folder.
+`index.html`. The HTML dashboard explains technical/review/failure states, repair decisions and
+errors, and shows scene previews expanded by default. A scene without detected defects says
+**Visual review required**, not **Passed**. Previews are copied into its local `assets` folder.
 The Windows launcher asks **Open the HTML report? [Y/N]** after checking. It replaces stale
 results even if Python cannot start; a new failed check does not show an older success as
 current. The report is a snapshot of the latest run, rebuilt when you run the checker again.
@@ -182,11 +206,11 @@ Run checks from the project root:
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s app -p "test_*.py"
-node --test app\video_encoder.test.mjs app\offline_motion.test.mjs
+node --test app\video_encoder.test.mjs app\offline_motion.test.mjs app\offline_geometry.test.mjs app\rig_safety.test.mjs
 git diff --check
 ```
 
-Latest validation: **121 Python tests and 6 Node tests pass**. A real approved-project audit checked 1,624 frames and 120 snapshots with no runtime failures or visual flags. Tests include stalled-stream cancellation, repair rollback/thresholds, approved-scene protection, early failure reporting and HTML report regeneration/error handling. These checks do not guarantee visual quality for every new generation.
+Latest validation: **122 Python tests and 13 Node tests pass**. A real approved-project audit checked 1,624 frames and 120 snapshots with no runtime failures or visual flags. Tests include stalled-stream cancellation, repair rollback/thresholds, approved-scene protection, early failure reporting and HTML report regeneration/error handling. These checks do not guarantee visual quality for every new generation.
 
 ## License
 

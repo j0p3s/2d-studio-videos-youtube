@@ -24,6 +24,7 @@ class OfflineSceneAuditTests(unittest.TestCase):
         self.assertFalse(accept_repair(before,dict(self.result(.2),color_spread=5)))
         # Rounding at the threshold must not override an actual audit warning.
         self.assertFalse(accept_repair(before,dict(self.result(.008),issues=['Low residual motion'])))
+        self.assertFalse(accept_repair(dict(before,figure_draws=24),dict(self.result(.2),figure_draws=0)))
 
     def fixture(self, folder, manual=False):
         root=Path(folder); p=root/'projects/video'
@@ -57,6 +58,16 @@ class OfflineSceneAuditTests(unittest.TestCase):
             self.assertEqual(source.read_text(),'original source')
             self.assertEqual(result['decisions'][0]['status'],'manual_scene_preserved')
             model.assert_not_called()
+
+    def test_geometry_defect_blocks_export_even_without_repair(self):
+        with tempfile.TemporaryDirectory() as folder:
+            host,source=self.fixture(folder)
+            result=dict(self.result(.2),issues=['Detached head'],geometry_findings=[{'message':'Detached head','frame':11}])
+            with patch('check_offline_scenes.audit',return_value={'shots':[result]}):
+                with self.assertRaisesRegex(RuntimeError,'geometry failures'):
+                    check_project(host,log=lambda _:None)
+            self.assertEqual(source.read_text(),'original source')
+            self.assertTrue((host.project/'build/scene_audit/report.json').exists())
 
     def test_browser_failure_after_repair_restores_original(self):
         with tempfile.TemporaryDirectory() as folder:

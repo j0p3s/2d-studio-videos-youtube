@@ -13,6 +13,7 @@ class FakeOllama(BaseHTTPRequestHandler):
     models = ["tiny:latest", "big:7b", "thinker"]
     seen = []
     thinker_calls, thinker_answers_on = 0, 2
+    repeat_calls, repeat_answers_on, repeat_status = 0, 2, 200
 
     def log_message(self, *args):
         pass
@@ -34,7 +35,14 @@ class FakeOllama(BaseHTTPRequestHandler):
         payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         self.seen.append((self.path, payload))
         if self.path == "/api/chat":
-            if payload["model"] == "thinker":
+            if payload['model'] in ('repeater', 'gpt-oss-repeater'):
+                FakeOllama.repeat_calls += 1
+                if FakeOllama.repeat_calls >= FakeOllama.repeat_answers_on:
+                    self._send([{'message': {'content': 'Complete answer'}}, {'done': True}])
+                else:
+                    self._send([{'message': {'content': 'broken partial'}},
+                                {'error': 'prediction aborted, token repeat limit reached'}], self.repeat_status)
+            elif payload["model"] == "thinker":
                 FakeOllama.thinker_calls += 1
                 answer = [{"message": {"content": "Done"}}] if FakeOllama.thinker_calls == FakeOllama.thinker_answers_on else []
                 self._send([{"message": {"thinking": "let me plan"}}] + answer + [{"done": True, "done_reason": "stop"}])
@@ -65,8 +73,9 @@ class OllamaTests(unittest.TestCase):
         cls.server.server_close()
 
     def setUp(self):
-        FakeOllama.models[:] = ["tiny:latest", "big:7b", "thinker"]
+        FakeOllama.models[:] = ["tiny:latest", "big:7b", "thinker", "repeater"]
         FakeOllama.thinker_calls, FakeOllama.thinker_answers_on = 0, 2
+        FakeOllama.repeat_calls, FakeOllama.repeat_answers_on, FakeOllama.repeat_status = 0, 2, 200
         FakeOllama.seen.clear()
 
     def test_text_streams_pieces_and_drops_thinking(self):
@@ -104,6 +113,46 @@ class OllamaTests(unittest.TestCase):
         created = [payload for path, payload in FakeOllama.seen if path == "/api/create"]
         self.assertEqual(created, [{"model": name, "from": "big:7b", "stream": False,
                                     "parameters": {"num_ctx": ollama.AGENT_CONTEXT}}])
+
+    def test_repeat_loop_recovers_without_accepting_partial_output(self):
+        notices = []
+        self.assertEqual(ollama.text('scene', model='repeater', env=self.env,
+                                    response_format='json', on_retry=notices.append), 'Complete answer')
+        calls = [p for path, p in FakeOllama.seen if path == '/api/chat']
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0]['messages'], calls[1]['messages'])
+        self.assertEqual(calls[1]['format'], 'json')
+        self.assertEqual(calls[1]['options']['num_ctx'], ollama.TEXT_CONTEXT)
+        self.assertEqual(calls[1]['options']['repeat_penalty'], 1.1)
+        self.assertIn('not a usage quota', notices[0])
+
+    def test_http_repeat_error_also_recovers(self):
+        FakeOllama.repeat_status = 500
+        self.assertEqual(ollama.text('scene', model='repeater', env=self.env), 'Complete answer')
+        self.assertEqual(FakeOllama.repeat_calls, 2)
+
+    def test_repeat_recovery_reduces_gpt_oss_reasoning(self):
+        FakeOllama.models.append('gpt-oss-repeater')
+        self.assertEqual(ollama.text('scene', model='gpt-oss-repeater', env=self.env,
+                                    thinking='medium'), 'Complete answer')
+        calls = [p for path, p in FakeOllama.seen if path == '/api/chat']
+        self.assertEqual([p['think'] for p in calls], ['medium', 'low'])
+
+    def test_repeat_retries_are_bounded(self):
+        FakeOllama.repeat_answers_on = 99
+        with self.assertRaisesRegex(RuntimeError, 'after 3 tries.*not a credit or usage quota'):
+            ollama.text('scene', model='repeater', env=self.env)
+        self.assertEqual(FakeOllama.repeat_calls, 3)
+
+    def test_stop_during_repeat_recovery_prevents_another_request(self):
+        stopped = []
+        def cancel():
+            if stopped:
+                raise RuntimeError('Stopped.')
+        with self.assertRaisesRegex(RuntimeError, 'Stopped.'):
+            ollama.text('scene', model='repeater', env=self.env,
+                        check_cancel=cancel, on_retry=lambda _: stopped.append(True))
+        self.assertEqual(FakeOllama.repeat_calls, 1)
 
     def test_claude_env_points_only_at_the_local_server(self):
         env = ollama.claude_env(dict(self.env, ANTHROPIC_API_KEY="real-key", PATH="p"), "big-7b-studio64k")

@@ -224,11 +224,14 @@ if "2d-studio: browser fallback" not in src:
 else:
     print("doctor.py already patched")
 
-# keep tools/verify_kit.py happy: refresh the expected hashes of the two patched files
+from patch_rig import patch_rig
+patch_rig(studio)
+
+# Refresh hashes of the patched files.
 import hashlib, re
 vk = studio / "tools" / "verify_kit.py"
 vsrc = vk.read_text(encoding="utf-8")
-for rel in ["render.mjs", "tools/doctor.py"]:
+for rel in ["render.mjs", "tools/doctor.py", "engine/rig2d.js"]:
     data = (studio / rel).read_bytes().replace(b"\r\n", b"\n").strip()
     h = hashlib.sha256(data).hexdigest()[:16]
     vsrc, n = re.subn(r'("%s":\s*")[0-9a-f]{16}(")' % re.escape(rel), r"\g<1>%s\g<2>" % h, vsrc)

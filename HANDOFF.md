@@ -5,7 +5,98 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
 
 ## Project and publication
 
-- Latest feature (included in this GitHub update): `Check-Offline-Animations.cmd` rebuilds a combined HTML dashboard
+- Current integration update (2026-11-13): Studio now offers **CastWorkshop (local)** as
+  animation-only provider, including Auto and a **Shorts 15s test** script option. Setup
+  has root/loopback URL fields plus check/finish-setup actions. It uses the installed
+  Krea2 text-to-image and H3 ref-to-video graphs directly, sequentially, as 8s visual clips;
+  Studio retains its selected narration. Optional H3 audio-reference inputs are removed.
+  No Telegram, VPS/database, CastWorkshop conversation worker, MOSS voice audition or
+  model migration is invoked by Studio Auto. Native H3 generated audio is discarded by
+  the existing shot assembler. Captions/generated music/authored SFX remain unsupported
+  for this route and are disclosed in its log. See `docs/CASTWORKSHOP.md` for contracts.
+  Source follows upstream checkout `24a9462`; setup/model/performance/voice doc hashes
+  matched GitHub main on this date. Job IDs/ambiguous submissions are preserved, queues
+  are checked and the upstream GPU lock is used. Changed inputs require a fresh project.
+- D: launcher created at `D:\CastWorkshop-Test\Launch-Test.cmd`, with standalone Krea →
+  MOSS → target-15s H3 runner and settings. Maintained sources live under
+  `integrations/castworkshop/test-kit/`. This standalone talking-video test differs from
+  Studio's narrated montage route. CUDA torch 2.14.1+cu130, torchvision and torchaudio
+  installed successfully; torch detects RTX 3080 Laptop GPU. ComfyUI requirements also
+  installed. All four pinned custom-node packages installed; models are still downloading
+  through the user's IDLE process. Setup waits for that process to close rather than
+  racing its `.part` writes. No complete real CastWorkshop render has been verified.
+  Studio GUI initialized in an isolated settings smoke test; desktop screenshot capture
+  timed out, so do not claim visual-layout approval. Final regression run: 145 Python,
+  16 Node and seven standalone launcher tests pass. Nothing is copied/moved off D: or
+  scheduled for later migration.
+  Real local ComfyUI startup/API check passed on RTX 3080 with no required image/video
+  nodes missing and both MOSS nodes registered. The owned smoke-test server was stopped.
+  Final D: readiness check: **30/31 model assets ready**; only
+  `minimax_h3_hybrid_fl2va_ref2va_b25-49_nvfp4.safetensors` remains incomplete.
+  `pip check` reports no broken requirements. The owned setup waiter was stopped after
+  dependencies installed; the user's original IDLE/downloader was not stopped. Finish
+  that download/close its IDLE window, then rerun Setup or Launch-Test.cmd as appropriate.
+
+- CastWorkshop organization: user requested a fully portable package inside the Studio,
+  then explicitly said **do not move anything after download completion; test on D: first**.
+  No migration/copy of real runtimes or model weights has been performed or scheduled.
+  Prepared `integrations/castworkshop/Launch.cmd`, `portable.py`, README and eight passing
+  offline tests (including actual Windows junction relocation). Import is manual only:
+  preserves D:, checks incomplete downloads/running source processes, verifies model
+  manifest hashes and copies with SHA256 checks; bundles each app's Python/dependencies
+  and FFmpeg when invoked. Runtime/media/private folders are gitignored. At preparation
+  source still had 24 partial/metadata files, a Python process and no ComfyUI torch.
+  Full import/GPU generation remains untested. Ollama service/LLM weights are not bundled;
+  do not claim a completely standalone stack. Await user after the original D: test.
+
+- Latest follow-up: attached Desktop `studio.log` ended at 09:53:07 with Ollama
+  `prediction aborted, token repeat limit reached` during animation, not a cloud quota.
+  `ollama_provider.text` now retries that specific error locally within its existing
+  three-attempt budget, discards aborted answers, varies sampling seed/settings and
+  lowers GPT-OSS recovery reasoning. Animation logs retry notices. Other errors and Stop
+  still propagate. Regression coverage includes streamed/HTTP failures, bounded retries,
+  discarded partial output and cancellation. Restart GUI to load this local change.
+  The failed real video run has not yet been resumed or validated end to end.
+- Fresh audits of the rebuilt 12-shot morning and 7-shot tiny-habits projects completed
+  without technical failures. Morning contact sheet inspected and 30s preview rendered;
+  final exports were not run in this follow-up. Tiny-habits s002 still combines wake and
+  journal narration while showing only journaling; that narrative correction is pending.
+
+- IN PROGRESS: user rejected the last video aesthetically and requested all rigs/scenes
+  rechecked. Added `rig_safety.mjs`, `patch_rig.py` and portable patch_kit integration;
+  installed pose-copy/finite-coordinate fixes locally. Added `offline_cinematic.js` and
+  rebuilt the 12-shot morning and 7-shot tiny-habits project sources with backups under
+  their `build/scene_audit/backups/full-visual-rebuild-*` folders. These latest rebuilt
+  sources have since cleared fresh technical audits, but are not visually approved or exported. Existing MP4s are
+  the prior versions. Do not claim this work complete. The approved 15-shot reference
+  sources were preserved. User then switched focus to a separate CastWorkshop 15s test
+  and explicitly authorized installing its experimental stack on D:.
+- Latest local blocker fixed: `3-morning-habits-that-build-iron-like-di-11130831/s003`
+  was a static whiteboard/pen scene despite the line “The 1-minute breathe.” Replaced it
+  with a deterministic breathing action, backed up its source/story/checkpoint under
+  `build/scene_audit/backups/breathing-fix`, and updated its description/hash with manual
+  protection so Auto reuses the correction. Full 12-shot audit clears all detected issues;
+  s003 residual motion is 0.0663. Repair prompts now prioritize narration and stateless
+  animation over an incorrect previous storyboard. This does not certify the other shots'
+  artistic quality.
+  Export completed successfully to that project's `out/final.mp4`; the current HTML
+  report was rebuilt. The GUI may retain its old error dialog until dismissed/restarted.
+- Latest local change: geometry-aware offline checking (`app/offline_geometry.mjs`).
+  Browser-only instrumentation checks every drawn rig pose for invalid joint arrays,
+  malformed segments and shared-preset mutation; Canvas checks catch non-finite coordinates
+  and distant filled circles accidentally connected into polygons. Reports show frame/time,
+  open previews by default and replace unconditional Passed labels with visual review required.
+  Geometry failures block export, including audit-only export. Generation/repair guidance
+  now specifies connected anatomical joints, finite array coordinates and safe pose copying.
+  Regression: the generated `5-tiny-habits-that-build-unbreakable-dis-11130720` video had
+  seven scenes incorrectly cleared by the old pixel-only audit. New checks flag all seven
+  (broken anatomy, object-valued hands, preset mutation, connected corner circles).
+  The user-approved 15-scene reference still clears the full 1,624-frame audit.
+  Live local-model repair of the seven-scene project accepted s001/s002/s004/s005/s007
+  by technical checks and reverted s003/s006, which still had malformed anatomy. Export
+  was stopped; the existing MP4 is unchanged. Do not describe the whole film as fixed.
+  This change is included in the current source update.
+- Previously published feature: `Check-Offline-Animations.cmd` rebuilds a combined HTML dashboard
   each run and asks **Open the HTML report? [Y/N]**. New module `app/offline_report.py`
   writes identical `reports/offline-animations/.index.html` and `index.html`, with project/
   scene states, repairs/errors and expandable copied previews. Direct CLI supports
@@ -36,7 +127,8 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
 - Pipeline: ideas/script → English narration → animation or OpenArt shots → thumbnail →
   explicit YouTube Publish. Nothing is uploaded merely by generating a video.
 - Script providers: Claude, OpenAI (Codex), Gemini CLI, Gemini API and Ollama. Animation
-  also offers OpenArt. Check actual account/model availability; do not assume historic results.
+  also offers OpenArt and CastWorkshop (local). Check actual account/model availability;
+  do not assume historic results.
 - Voice: Piper is the default (`en_US-joe-medium`), Qwen3 is optional/local, Edge is online.
   Offline mode replaces Edge with Piper but retains an explicitly selected Qwen3 engine.
   English output applies to all providers; imported recordings are checked with Whisper.
@@ -112,8 +204,9 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
 
 ## Validation and remaining limits
 
-- Latest automated results: **121 Python tests and 6 Node tests pass**, plus clean syntax and
-  whitespace checks. Run the commands in [README](README.md#validation) from the checkout root.
+- Latest automated results: **145 Python tests and 16 Node tests pass**, plus seven standalone
+  D: launcher tests, plus clean Python syntax and Git whitespace checks. Run the commands
+  in [README](README.md#validation) from the checkout root.
 - Real approved-project audit: **1,624 frames, 120 snapshots, 15 shots**, zero runtime failures
   or visual flags. A synthetic error on frame 11, outside snapshot times, was detected.
 - Tests cover repair acceptance/rollback, warning thresholds, protected scenes, changed visual
