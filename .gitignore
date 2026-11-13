@@ -27,3 +27,4 @@ plugin/
 Adnroid-App/
 Android-App/
 .venv-qwen/
+.agents/
