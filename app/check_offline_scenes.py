@@ -42,7 +42,37 @@ def accept_repair(before, after):
     return True
 
 
-def check_project(host, *, request=None, log=print):
+REPAIR_ATTEMPTS = 3
+
+
+def check_project(host, *, request=None, log=print, attempts=REPAIR_ATTEMPTS):
+    """Audit the scenes and ask the model to repair flagged ones, retrying with feedback.
+
+    A single repair is often not enough (the model returns another near-static scene), so a
+    flagged scene gets up to `attempts` rewrites. Each retry is told what the previous
+    attempt measured. Only after the last attempt do unresolved scenes stop the export.
+    """
+    notes = {}
+    for attempt in range(1, max(1, attempts) + 1):
+        final = _check_once(host, request=request, log=log, notes=notes)
+        unresolved = _unresolved(final)
+        if request is None or not unresolved or attempt == attempts:
+            break
+        log(f'Scene audit: {", ".join(unresolved)} still flagged; repair attempt {attempt + 1} of {attempts}.')
+    if request is not None and unresolved:
+        raise RuntimeError('Scene audit still needs review: ' + ', '.join(unresolved) +
+                           f' (after {attempt} repair attempt{"s" if attempt != 1 else ""}). '
+                           'Original code and the audit report are preserved; final export was not approved.')
+    return final
+
+
+def _unresolved(final):
+    manual = lambda sid: final.get('manual_ids') and sid in final['manual_ids']
+    return [x['id'] for x in final['shots'] if x['issues'] and not manual(x['id'])]
+
+
+def _check_once(host, *, request=None, log=print, notes=None):
+    notes = {} if notes is None else notes
     from local_animation import SCENE_GUIDE, scene_result, normalize_source, save_json
     p = host.project
     before = audit(host)
@@ -85,7 +115,7 @@ def check_project(host, *, request=None, log=print):
                   'in the central action area, not just a tiny pen tip or a caption.\n'
                   'Shot: ' + json.dumps(by_id[sid]) + '\nStoryboard: ' +
                   json.dumps(saved.get('directions', {}).get(sid, {})) + '\nAudit: ' +
-                  json.dumps(result['issues']) + '\nPrevious source:\n' + source[:18000])
+                  json.dumps(result['issues']) + notes.get(sid, '') + '\nPrevious source:\n' + source[:18000])
         try:
             log(f'{sid}: requesting a local repair; the replacement will be audited before acceptance.')
             description, code = scene_result(request(prompt, repair=True), sid)
@@ -136,22 +166,22 @@ def check_project(host, *, request=None, log=print):
                           f"figures={candidate.get('figure_draws', 'unknown')}, "
                           f"motion={candidate.get('motion_ratio')}, detail={candidate.get('color_spread')}")
             decisions.append({'id': sid, 'status': 'reverted_no_measured_improvement', 'detail': detail})
+            notes[sid] = ('\nA previous repair of this shot was rejected (' + detail + '; it needs motion_ratio of at '
+                          'least 0.02). Do not repeat it: sample at least two clearly different poses over info.p '
+                          '(rigSample between arm/torso poses 40+ degrees apart) so the figure itself moves '
+                          'through the whole shot.')
     save_json(plan_file, story)
     save_json(checkpoint, saved)
     final = audit(host) if any(x['status'].startswith('reverted') for x in decisions) else after
     final['decisions'] = decisions
     final['visually_approved'] = False
+    final['manual_ids'] = [sid for sid, record in complete.items() if record.get('manual')]
     report = p / 'build/scene_audit/report.json'
     save_json(report, final)
     log(f'Scene audit saved: {report}. Human review is still required.')
     blocking = [x['id'] for x in final['shots'] if x['runtime_errors'] or x['missing'] or x.get('geometry_findings')]
     if blocking:
         raise RuntimeError('Unresolved scene runtime/geometry failures: ' + ', '.join(blocking))
-    unresolved = [x['id'] for x in final['shots'] if x['issues'] and
-                  not complete.get(x['id'], {}).get('manual')]
-    if request is not None and unresolved:
-        raise RuntimeError('Scene audit still needs review: ' + ', '.join(unresolved) +
-                           '. Original code and the audit report are preserved; final export was not approved.')
     return final
 
 

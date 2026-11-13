@@ -114,8 +114,11 @@ figure forward with spine, chest and neck together above about 40 degrees: it re
 as waking up. Waking or getting up means sitting on the edge of a drawn bed (pose 'sit' with the
 bed top 50 rig units above the feet) and then standing. Close-ups: the whole head and both
 shoulders stay inside the frame; never combine the close-up scale s=E.H/200 with the full-body y.
-Every shot needs a visible change between its first and last frame (an arm, the head, a prop
-or the camera), because near-static shots are rejected. Any text or page drawn in the scene
+Every shot needs a visible change between its first and last frame, because near-static shots
+are rejected. The figure itself must move: never pass one fixed rigPose('stand') for the whole
+shot; use rigSample between at least two poses whose arms or torso differ by 40+ degrees, in
+both full-body and close-up shots. Never write the narration sentence into a thought bubble or
+caption box; show what the sentence describes instead. Any text or page drawn in the scene
 must be at least E.H*0.03 high or not drawn; never draw unreadable micro text.
 Return JSON only: {"scene":"specific action description","code":"complete ES module source"}.
 """

@@ -43,14 +43,33 @@ class OfflineSceneAuditTests(unittest.TestCase):
             host, source=self.fixture(folder)
             response=json.dumps({'scene':'Writes a note','code':"registerShot('s001',{draw(){}})"})
             report={'shots':[self.result()]}
+            prompts=[]
+            def request(prompt,**kwargs):
+                prompts.append(prompt)
+                return response
             with patch('check_offline_scenes.audit',return_value=report):
-                with self.assertRaisesRegex(RuntimeError, 'still needs review'):
-                    check_project(host,request=lambda *args,**kwargs:response,log=lambda _:None)
+                with self.assertRaisesRegex(RuntimeError, r'still needs review.*after 3 repair attempts'):
+                    check_project(host,request=request,log=lambda _:None)
             result=json.loads((host.project/'build/scene_audit/report.json').read_text())
             self.assertEqual(source.read_text(),'original source')
             self.assertEqual(result['decisions'][0]['status'],'reverted_no_measured_improvement')
             self.assertFalse(result['visually_approved'])
-            self.assertEqual(len(list((host.project/'build/scene_audit/backups').glob('*/s001.js'))),1)
+            # One backup per attempt; retries are told why the previous attempt was rejected.
+            self.assertEqual(len(list((host.project/'build/scene_audit/backups').glob('*/s001.js'))),3)
+            self.assertEqual(len(prompts),3)
+            self.assertNotIn('previous repair of this shot was rejected',prompts[0])
+            self.assertIn('previous repair of this shot was rejected',prompts[1])
+
+    def test_a_later_repair_attempt_can_resolve_the_scene(self):
+        with tempfile.TemporaryDirectory() as folder:
+            host, source=self.fixture(folder)
+            response=json.dumps({'scene':'Writes a note','code':"registerShot('s001',{draw(){}})"})
+            audits=iter([{'shots':[self.result()]},{'shots':[self.result(.001)]},{'shots':[self.result(.001)]},
+                         {'shots':[self.result(.001)]},{'shots':[self.result(.3)]},{'shots':[self.result(.3)]}])
+            with patch('check_offline_scenes.audit',side_effect=lambda host:next(audits)):
+                final=check_project(host,request=lambda *args,**kwargs:response,log=lambda _:None)
+            self.assertEqual(source.read_text(),"registerShot('s001',{draw(){}})")
+            self.assertEqual(final['shots'][0]['issues'],[])
 
     def test_approved_manual_scenes_are_not_rewritten(self):
         with tempfile.TemporaryDirectory() as folder:
