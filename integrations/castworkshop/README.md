@@ -1,5 +1,7 @@
 # Portable CastWorkshop
 
+Updated 2026-11-13. [Documentation index](../../docs/README.md).
+
 Open **Launch.cmd** in this folder. Everything imported for this integration stays here;
 the Studio root and its existing video projects are not reorganized.
 
@@ -65,10 +67,16 @@ importer. CastWorkshop operations that call Ollama still need the separately ins
 local Ollama service and a configured model. Telegram needs user configuration and network
 access. A completely offline, machine-independent CastWorkshop stack has not been certified.
 
-The D: installation still has unfinished model downloads. CUDA PyTorch, ComfyUI requirements
-and pinned custom nodes have since been installed, and a real local ComfyUI startup/node
-registration check passed. No real models have been moved, no complete import has run,
-and no GPU generation or relocated full stack has been verified.
+The D: installation now passes its 31/31 model-asset check. CUDA PyTorch, ComfyUI requirements
+and pinned custom nodes are installed, and a real local ComfyUI startup/node registration
+check passed. No real models have been moved, no complete import has run,
+and no complete GPU video generation or relocated full stack has been verified.
+
+The latest standalone retry verified 31/31 downloaded assets and reused a successfully
+rendered reference image. The following voice-stage server exit prompted polling/diagnostic
+fixes; a complete talking-video and relocated-package acceptance remain separate checks.
+Keep models on D: while testing. The repository ignores model folders
+at every depth, common weight files and these runtime folders; weights are not published.
 
 Advanced commands (from this folder):
 

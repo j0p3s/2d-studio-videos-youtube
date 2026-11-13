@@ -1,7 +1,8 @@
 # Offline animation workflow
 
 This guide describes the automatic Ollama path and scene checker. The agent-based Claude,
-Codex/Gemini workflows and OpenArt shot generation are separate adapters.
+Codex/Gemini workflows, OpenArt generation and [local CastWorkshop clips](CASTWORKSHOP.md)
+are separate adapters. See the [documentation index](README.md). Updated 2026-11-13.
 
 ## Setup and updating
 
@@ -13,7 +14,7 @@ Codex/Gemini workflows and OpenArt shot generation are separate adapters.
 3. Install a Piper voice or optional Qwen3-TTS model and the alignment dependencies/model.
    These need downloads once. Edge voices, connected providers and YouTube upload need
    internet. Offline mode keeps an explicitly selected Qwen3 engine, or replaces Edge with Piper.
-4. Close the GUI before applying updates. Update the entire `app` directory and root launchers;
+4. Close the GUI before applying updates. Update `app/`, `integrations/`, `docs/` and root launchers;
    the pipeline depends on several Python/JavaScript modules. For a clean checkout,
    `git pull --ff-only` updates tracked files; preserve local changes first.
 5. From the root, run `.\.venv\Scripts\python.exe app\patch_kit.py growkaz-stickman-studio`
@@ -186,12 +187,28 @@ package from Ollama Flash Attention; installing it does not accelerate Ollama re
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s app -p "test_*.py"
-node --test app\video_encoder.test.mjs app\offline_motion.test.mjs app\offline_geometry.test.mjs
+node --test app\video_encoder.test.mjs app\offline_motion.test.mjs app\offline_geometry.test.mjs app\rig_safety.test.mjs
 git diff --check
 ```
 
-Latest verified results: 122 Python tests and 13 Node tests pass. Stalled-header/token tests
+Current regression coverage includes empty ComfyUI success responses and server exits.
+Consult
+[the current handoff](../HANDOFF.md#validation-and-remaining-limits) for final run counts.
+Stalled-header/token tests
 verify cancellation under 1.5 seconds in the local test server. A synthetic frame-11 error
 outside snapshot times was detected by the full-frame audit. A real approved-video audit
 checked 1,624 frames and 120 snapshots without runtime failures or visual flags. These are
 specific test results, not proof that every model or new video will succeed.
+
+## Storage and the other local video path
+
+Ollama's installed service and LLM library are separate from ComfyUI's diffusion models.
+Moving `ComfyUI/models` does not move Ollama models. Keep CastWorkshop on D: until the
+original test is complete and migration is explicitly requested; a finished download does
+not trigger migration. Model folders/weights and caches are ignored by Git, as described in
+[the repository storage rules](README.md#model-storage-and-github).
+
+The offline scene checker audits JavaScript kit scenes, not CastWorkshop-generated video.
+For CastWorkshop logs, required nodes, retained narration and saved ComfyUI job recovery,
+use [the CastWorkshop guide](CASTWORKSHOP.md). Its local HTTP `/free` success response can
+be empty; the adapter accepts that and continues instead of reporting a JSON decode error.

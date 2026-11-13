@@ -123,7 +123,7 @@ class Session:
             body = response.read()
             if response.status >= 400:
                 raise RuntimeError(f'ComfyUI HTTP {response.status}: ' + body.decode('utf-8', 'replace')[:2000])
-            return json.loads(body)
+            return json.loads(body) if body.strip() else {}
         finally:
             connection.close()
 
@@ -164,15 +164,16 @@ class Session:
                                    'Use a free port in Setup or stop that server yourself.')
             self.log('Using the configured local ComfyUI server.')
             return
-        self.log('Starting local ComfyUI with --lowvram; server log: ' + str(self.cache / 'server.log'))
+        self.log('Starting local ComfyUI with --lowvram and dynamic VRAM disabled; server log: ' + str(self.cache / 'server.log'))
         env = dict(self.env)
         env.pop('PYTHONHOME', None)
         env.pop('PYTHONPATH', None)
         env['PYTHONUTF8'] = '1'
+        env['PYTHONFAULTHANDLER'] = '1'
         port = str(urlsplit(self.url).port or 80)
         with (self.cache / 'server.log').open('a', encoding='utf-8') as log:
             self.process = subprocess.Popen([str(self.python), str(self.comfy / 'main.py'),
-                '--listen', urlsplit(self.url).hostname, '--port', port, '--lowvram', '--disable-auto-launch',
+                '--listen', urlsplit(self.url).hostname, '--port', port, '--lowvram', '--disable-dynamic-vram', '--disable-auto-launch',
                 '--offline'], cwd=self.comfy, env=env, stdout=log, stderr=subprocess.STDOUT,
                 creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         deadline = time.monotonic() + 300
@@ -230,14 +231,24 @@ class Session:
             save(state_path, state)
         prompt_id = state['prompt_id']
         self.log(f'CastWorkshop {kind} job: {prompt_id}')
-        deadline, update = time.monotonic() + 7200, 0
+        deadline, update, failed_reads = time.monotonic() + 7200, 0, 0
         while time.monotonic() < deadline:
             self.check()
+            if self.process is not None and self.process.poll() is not None:
+                state['server_exit_code'] = self.process.returncode
+                save(state_path, state)
+                raise RuntimeError(f'ComfyUI exited during {kind} generation (code {self.process.returncode}). '
+                                   'Saved job ID is preserved. Read ' + str(self.cache / 'server.log'))
             try:
                 history = self.api('/history/' + prompt_id)
             except (OSError, ValueError, http.client.HTTPException):
-                time.sleep(.2)
+                failed_reads += 1
+                if failed_reads >= 6:
+                    raise RuntimeError('Lost ComfyUI connection; saved job ID is preserved. Read ' + str(self.cache / 'server.log'))
+                self.log(f'ComfyUI is not responding ({failed_reads}/6); retaining the accepted job.')
+                time.sleep(1)
                 continue
+            failed_reads = 0
             if prompt_id in history:
                 entry = history[prompt_id]
                 save(state_path.with_suffix('.history.json'), entry)

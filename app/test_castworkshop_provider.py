@@ -26,6 +26,25 @@ class CastWorkshopTests(unittest.TestCase):
         self.assertNotIn(cast.CASTWORKSHOP, TEXT_PROVIDERS)
         self.assertIn('workflow models', model_choices.available(cast.CASTWORKSHOP, {})[1])
 
+    def test_empty_success_response_from_free_is_supported(self):
+        with patch.object(cast.http.client, 'HTTPConnection') as connection:
+            response = connection.return_value.getresponse.return_value
+            response.status = 200
+            response.read.return_value = b''
+            self.assertEqual(self.session.api('/free', {'unload_models': True}), {})
+            connection.return_value.close.assert_called_once()
+
+    def test_server_exit_stops_polling_without_duplicate_submission(self):
+        import hashlib
+        state = self.destination.parent / 'jobs' / (self.destination.name + '.json')
+        key = hashlib.sha256(json.dumps(self.graph, sort_keys=True).encode()).hexdigest()
+        cast.save(state, {'key': key, 'prompt_id': 'server-exited-job'})
+        self.session.process = SimpleNamespace(poll=lambda: 1, returncode=1)
+        with patch.object(self.session, 'api', side_effect=AssertionError('must not submit')):
+            with self.assertRaisesRegex(RuntimeError, 'ComfyUI exited'):
+                self.session.generate(self.graph, '57', self.destination, 'image')
+        self.assertEqual(json.loads(state.read_text())['prompt_id'], 'server-exited-job')
+
     def test_remote_or_credentialed_endpoints_are_rejected(self):
         for url in ('https://localhost:8190', 'http://example.com', 'http://127.0.0.1.evil.test',
                     'http://user:pass@localhost:8190', 'http://localhost/other', 'http://localhost/?token=x'):

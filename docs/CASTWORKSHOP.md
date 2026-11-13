@@ -1,5 +1,7 @@
 # CastWorkshop in Studio Auto
 
+Updated 2026-11-13. [Documentation index](README.md).
+
 Studio supports **CastWorkshop (local)** as an animation provider. It uses the installed
 CastWorkshop Krea2 and MiniMax H3 API workflow files directly through local ComfyUI.
 Telegram, the CastWorkshop VPS/database and its conversation worker are not started.
@@ -51,7 +53,9 @@ Auto in this version. The log identifies these limitations instead of claiming t
 
 ## Local service, recovery and files
 
-- ComfyUI starts with `--lowvram`, a loopback bind and `--offline`. The explicit port defaults
+- ComfyUI starts with `--lowvram`, `--disable-dynamic-vram`, a loopback bind and `--offline`.
+  Dynamic VRAM is disabled so this ComfyUI version actually honors its low-VRAM mode.
+  Python fault-handler diagnostics are enabled for native failures. The explicit port defaults
   to 8190. The adapter refuses a responding server whose command line does not identify
   the configured installation. If the standalone D: test's server is still running,
   close that idle server or use a different free port for Studio.
@@ -60,6 +64,14 @@ Auto in this version. The log identifies these limitations instead of claiming t
 - Stop ends Studio's waiting. A job already accepted by ComfyUI may continue. Its saved
   prompt ID is polled on resume; a timeout or ambiguous POST is never blindly resubmitted.
   Inspect queue/history and the saved state before clearing an unresolved submission.
+- ComfyUI's `/free` can return an empty HTTP success response. Both the Studio adapter
+  and standalone launcher accept this. An older launcher could finish a reference image,
+  save it successfully and then stop with a JSON decode error during memory release.
+  Update both copies and resume: the completed image is reused, not generated again.
+- If an owned server exits, polling stops and records its exit code while preserving the
+  accepted job ID. Repeated connection failures also stop instead of silently waiting for
+  hours. Do not clear an ambiguous submission. A confirmed stopped server with no matching
+  output can be reviewed and its failed stage state archived before a deliberate retry.
 - Runtime errors, missing workflow nodes or incomplete required models stop generation.
   A successful offline test does not prove H3's quantized models run on a particular GPU.
 - Generated frames/clips, plan and job states live in `work/<project>/castworkshop/`.
@@ -69,6 +81,11 @@ Auto in this version. The log identifies these limitations instead of claiming t
   than silently deleting the existing jobs. Final output is in `work/<project>/out/`.
 - Readiness uses the upstream filename/size convention, not full model hashing. The manual
   portable-copy tool separately verifies model hashes when it is explicitly invoked.
+
+Messages about missing optional `audio_separator`, Triton, torch-npu or OpenGL acceleration
+do not by themselves identify the failed stage. Check the saved stage history and final
+exception before adding packages. `pip check` passing confirms dependency metadata, not
+that every model can render successfully on the GPU.
 
 ## Standalone launcher and portable packaging
 
@@ -99,8 +116,12 @@ adapter/copy/launcher regression tests pass; Studio's isolated GUI starts withou
 exception. Desktop screenshot capture timed out, so no visual-layout approval is claimed.
 The real local ComfyUI startup/API check passed on the RTX 3080; every required image/video
 node and both MOSS test nodes registered successfully. The smoke-test server was then stopped.
-The original downloads were still incomplete during implementation. A complete real
-CastWorkshop Auto video and a relocated portable stack have **not** been verified.
-Final D: readiness was 30/31 model assets, with the H3 hybrid diffusion file still
-incomplete; `pip check` reported no broken requirements. The owned setup waiter was
-stopped after dependency installation, leaving the user's original downloader untouched.
+The latest D: readiness check verified **31/31 assets**, working CUDA and no broken pip
+requirements. Its reference image rendered in 68.42 seconds, then exposed the empty `/free`
+response bug. After that fix, a retry reused the image and reached MOSS voice generation.
+The server stopped during that attempt without a Python traceback; its cause is not yet
+confirmed. Server-exit detection, bounded connection recovery and fault-handler logging
+are now enabled. The confirmed stopped voice job had no output and was archived under
+`D:\CastWorkshop-Test\logs\update-backups/` before preparing a deliberate retry.
+The updated low-VRAM policy still requires a real generation check. A complete final
+video, Studio Auto GPU run and relocated portable stack remain unverified. No models moved.

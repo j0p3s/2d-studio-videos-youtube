@@ -2,6 +2,9 @@
 
 A Windows desktop app for narrated stick-figure videos with local Ollama or connected AI providers, optional OpenArt or local CastWorkshop shots and YouTube upload. Offline animation uses an app-managed storyboard, scene generation, checks and export pipeline.
 
+See the [documentation index](docs/README.md) for setup, local workflows, recovery,
+portable packaging and the current handoff. Documentation updated 2026-11-13.
+
 ## Install
 
 Optional CastWorkshop packaging is isolated under
@@ -16,7 +19,7 @@ it never migrates automatically when downloads finish.
    - the **animation studio kit**, taken from `plugin\GrowKaz_Stickman.plugin`, with three.js and Playwright; rendering uses a complete bundled Chromium or installed Chrome/Edge
    - Python packages: numpy, scipy, faster-whisper, edge-tts, piper-tts, customtkinter, Pillow and the YouTube API client
    - Claude Code skills: `make-2d-video`, `new-video`, `render-video`, `video-sound`, `video-styles` and **`scriptforge`** (the "2D Niche Prompt" PDF turned into a skill)
-2. Everything owned by the studio lives beside `Install-2D-Studio.cmd` and `Launch-2D-Studio.cmd`: settings, YouTube credentials, projects, AI settings, skills, caches and the local Python environment. Keep this folder in a writable location.
+2. Studio-managed settings, YouTube credentials, projects, skills, caches and Python environments live beside the launchers. Keep this folder writable. Existing external installations can remain outside it: CastWorkshop currently uses `D:\CastWorkshop-Test`, and Ollama keeps its own installed service/model library. Nothing migrates those automatically.
 3. In **Setup**, choose providers for **Ideas & script** and **Animation & character designs** independently. Sign in for CLI providers, configure an API key for Gemini API, or install/download a local Ollama model for offline use.
 
 ## AI providers
@@ -43,16 +46,16 @@ The installer provisions animation skills under `.claude/skills` for agent-based
 
 You can run the installer again at any time. It skips anything already installed and never touches your `projects\` folder.
 
-Close the GUI before updating. Update the entire `app` folder and root launchers/documentation, not just `studio_gui.py`: the offline pipeline/checker has several modules. For a clean Git checkout, use `git pull --ff-only`; preserve local edits first. Reapply patches with `.\.venv\Scripts\python.exe app\patch_kit.py growkaz-stickman-studio`, then restart the studio. The installer applies patches when provisioning the kit. See [offline workflow and troubleshooting](docs/OFFLINE-WORKFLOW.md).
+Close the GUI before updating. Update `app/`, `integrations/`, `docs/`, root launchers, README, handoff and `.gitignore` together, not just `studio_gui.py`. For a clean Git checkout, use `git pull --ff-only`; preserve local edits first. Reapply kit patches with `.\.venv\Scripts\python.exe app\patch_kit.py growkaz-stickman-studio`, then restart Studio. The installer applies patches when provisioning the kit. Updating source does not move D: models or replace private settings. See [offline workflow and troubleshooting](docs/OFFLINE-WORKFLOW.md).
 
 > Remotion, which the tutorial installs, isn't needed. The plugin draws every frame with canvas and three.js in headless Chromium and encodes with FFmpeg.
 
 ## Using the app
 | Step | What it does |
 |---|---|
-| **① Script** | Pick a niche and a length (Shorts up to 12 min) to get 10 ideas through your selected script provider. Pick one and you get the full script, alternative titles, tags, a description and thumbnail text. Type edit requests to revise it. |
+| **① Script** | Pick a niche and length: **Shorts 15s test**, **Shorts 60s**, or a longer video up to 12 minutes. Get 10 ideas through the selected text provider, then choose one for a script and metadata. Type edit requests to revise it. |
 | **② Voiceover** | English speech with Piper, Qwen3 or Edge, or import a recording verified as English. |
-| **③ Animate** | Automatic Ollama: alignment → whole-story direction → bounded 2D scene requests → all-frame runtime/motion checks → render/mix. Agent providers can create 2D/3D scenes in passes. Optional character-design/interactive tools use provider adapters. OpenArt instead generates images/clips and assembles them to narration. |
+| **③ Animate** | Ollama writes and audits kit scenes; agent providers create 2D/3D scenes in passes. OpenArt generates remote images/clips. CastWorkshop generates local Krea2/H3 visual clips. Both shot-based providers assemble clips under Studio narration. |
 | **④ Upload** | Makes a thumbnail from a video frame with big text on it, fills in the title, description and tags from the script, and uploads to YouTube (private, unlisted, public or scheduled). |
 
 ## CastWorkshop (local AI-generated shots)
@@ -62,8 +65,21 @@ and point its folder at `D:\CastWorkshop-Test`. Use **Check CastWorkshop** and c
 missing dependencies before rendering. To test through Auto, choose **Shorts 15s test**
 on Script and **Auto → Start fresh**. The backend generates sequential 8-second H3 visual
 clips and retains the original Studio narration. No models are moved and Telegram is
-not used. GPU/model acceptance is still pending completed downloads and a real render.
+not used. Model downloads and server/node checks have completed; full video-render
+acceptance is still pending. See the guide for the latest test and recovery state.
 See [CastWorkshop setup, recovery and current limits](docs/CASTWORKSHOP.md).
+
+Choose **Auto → Start fresh** to test a new provider: Auto otherwise resumes the current
+project and reuses an already completed video. The 15s option requests about 30–35 words;
+the actual voice recording determines final duration. Auto stops on Upload for review.
+
+## Model folders and GitHub
+
+Model libraries remain local. `.gitignore` excludes `models/` and `Models/` at every depth,
+common weights (`.safetensors`, `.gguf`, `.ckpt`, `.onnx`, `.pt`, `.pth`, `pytorch_model*.bin`)
+and partial safetensors/GGUF downloads. Portable runtimes, credentials, caches and generated
+media are excluded separately. No model weights were tracked at the latest review.
+See [storage and publication rules](docs/README.md#model-storage-and-github).
 
 ## OpenArt (AI-generated shots)
 **Smooth local assembly:** scene boundaries now use short cross-dissolves (~0.42 seconds), with extra overlap handles that preserve the narration timeline. Short AI clips use slow motion to fill a scene instead of freezing their last frame; stills use continuous camera motion instead of abrupt crop resets. Boundaries are processed two scenes at a time to avoid a large all-scenes filter graph. This adds local encoding work, not paid generation requests, when the source images/clips are already cached. To improve an existing completed video, use **Animate → Make the video** again; Auto reuses a completed final MP4 instead of rebuilding it. Pauses baked into an original source clip cannot be removed by this timing adjustment alone.

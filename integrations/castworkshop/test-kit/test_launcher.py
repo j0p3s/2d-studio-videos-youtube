@@ -18,13 +18,14 @@ PYTHON = COMFY / '.venv/Scripts/python.exe'
 LOGS = ROOT / 'logs'
 URL = 'http://127.0.0.1:8190'
 FLAGS = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+SERVER_PROCESS = None
 
 
 def environment():
     env = dict(os.environ)
     env.pop('PYTHONHOME', None)
     env.pop('PYTHONPATH', None)
-    env.update(PYTHONUTF8='1', PYTHONUNBUFFERED='1', PIP_CACHE_DIR=str(ROOT / 'pip-cache'),
+    env.update(PYTHONUTF8='1', PYTHONUNBUFFERED='1', PYTHONFAULTHANDLER='1', PIP_CACHE_DIR=str(ROOT / 'pip-cache'),
                TEMP=str(ROOT / 'tmp'), TMP=str(ROOT / 'tmp'), COMFY_URL=URL,
                COMFYUI_PATH=str(COMFY), COMFY_MODELS_DIR=str(COMFY / 'models'), COMFY_PYTHON=str(PYTHON))
     return env
@@ -76,7 +77,8 @@ def api(path, data=None):
     req = request.Request(URL + path, data=body, headers={'Content-Type': 'application/json'})
     try:
         with request.urlopen(req, timeout=30) as reply:
-            return json.load(reply)
+            body = reply.read()
+            return json.loads(body) if body.strip() else {}
     except error.HTTPError as exc:
         detail = exc.read().decode('utf-8', 'replace')
         raise RuntimeError(f'ComfyUI HTTP {exc.code}: {detail[:3000]}') from None
@@ -153,6 +155,7 @@ def setup():
 
 
 def start_server():
+    global SERVER_PROCESS
     if probe():
         owners = source_processes(r'main.py.*--port\s+8190')
         if not owners:
@@ -162,11 +165,12 @@ def start_server():
     log = (LOGS / 'comfy-server.log').open('a', encoding='utf-8')
     try:
         process = subprocess.Popen([str(PYTHON), 'main.py', '--listen', '127.0.0.1', '--port', '8190',
-                                    '--lowvram', '--disable-auto-launch'], cwd=COMFY, env=environment(),
+                                    '--lowvram', '--disable-dynamic-vram', '--disable-auto-launch'], cwd=COMFY, env=environment(),
                                    stdout=log, stderr=subprocess.STDOUT, creationflags=FLAGS)
+        SERVER_PROCESS = process
     finally:
         log.close()
-    print('Starting test ComfyUI on port 8190 with --lowvram for the 16 GB GPU.', flush=True)
+    print('Starting test ComfyUI on port 8190 with --lowvram and dynamic VRAM disabled for this test.', flush=True)
     deadline = time.monotonic() + 300
     while time.monotonic() < deadline:
         if process.poll() is not None:
@@ -216,13 +220,24 @@ def stage(name, workflow, save_id, folder):
         save_state(state_path, state)
     prompt_id = state['prompt_id']
     print(f'{name}: job {prompt_id}. Rendering may take a long time.', flush=True)
-    deadline, update = time.monotonic() + 7200, 0
+    deadline, update, failed_reads = time.monotonic() + 7200, 0, 0
     while time.monotonic() < deadline:
+        if SERVER_PROCESS is not None and SERVER_PROCESS.poll() is not None:
+            state['server_exit_code'] = SERVER_PROCESS.returncode
+            save_state(state_path, state)
+            raise RuntimeError(f'ComfyUI exited during {name} (code {SERVER_PROCESS.returncode}). '
+                               'The job ID is preserved. Read logs/comfy-server.log before retrying.')
         try:
             history = api('/history/' + prompt_id)
         except (OSError, ValueError):
+            failed_reads += 1
+            if failed_reads >= 6:
+                raise RuntimeError(f'Lost ComfyUI while waiting for {name}. Job {prompt_id} is preserved; '
+                                   'no duplicate was submitted. Read logs/comfy-server.log.')
+            print(f'{name}: ComfyUI is not responding ({failed_reads}/6).', flush=True)
             time.sleep(5)
             continue
+        failed_reads = 0
         if prompt_id in history:
             entry = history[prompt_id]
             save_state(folder / (name + '-history.json'), entry)
