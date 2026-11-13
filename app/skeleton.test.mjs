@@ -179,3 +179,16 @@ test('passing joint names to rigPose explains the difference between angles and 
   assert.throws(() => rigPose('stand', { hF: [1, 2] }), /joint POSITION/);
   assert.throws(() => rigPose('stand', { neckF: 3 }), /Unknown rig channel 'neckF'/);
 });
+test('rigReach/rigPlant accept joint names as the side and errors show what was received', () => {
+  const base = rigPose('stand'), sh = rigJoints(base).sh, t = [sh[0] + 30, sh[1] + 20];
+  assert.deepEqual(rigReach(base, 'hF', t), rigReach(base, 'F', t));
+  assert.deepEqual(rigReach(base, 'hB', t), rigReach(base, 'B', t));
+  assert.deepEqual(rigPlant(base, 'fB', [10, 0]), rigPlant(base, 'B', [10, 0]));
+  assert.throws(() => rigReach(base, 'right', t), /got "right".*rigReach\(pose,'F'/);
+  assert.throws(() => rigReach(base, t, 'F'), /Rig side must be/);
+});
+test('unknown channel errors suggest the real channel name', () => {
+  assert.throws(() => rigPose('stand', { neckF: 3 }), /Did you mean 'neck'.*no F\/B suffix/);
+  assert.throws(() => rigPose('stand', { shoulder: 3 }), /Did you mean 'shoulderF' or 'shoulderB'/);
+  assert.throws(() => rigPose('stand', { wobble: 3 }), /Unknown rig channel 'wobble'\. Valid/);
+});

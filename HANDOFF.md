@@ -144,7 +144,10 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
   errors explain angles vs positions, and `SCENE_GUIDE` teaches `jointWorld(fig,'hF')` for props. The
   failed project re-rendered with no shot errors; press Auto again to continue from step 4. Other errors
   in that log (`g.fillStyle is not a function`, `const g` redeclared, `sh += n`) are generic model
-  mistakes the existing repair pass fixed. Not yet re-run through the model end to end.
+  mistakes the existing repair pass fixed. Second run (14:07) showed the model using the API
+  correctly but repeating two slips (`neckF`, and `rigReach(pose,'hF',...)`): the side argument now
+  also accepts joint names, errors say what was received and suggest the real channel, and the prompt
+  lists exact channel names. Restart the GUI so the new prompt loads. Not yet re-run end to end.
   Hoodie/face rendering is unchanged (uniform-width limbs; tapered limbs/hands/feet are a possible
   next step). Restart the GUI to load the engine update.
 

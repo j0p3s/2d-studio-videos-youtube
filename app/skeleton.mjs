@@ -53,7 +53,8 @@ function normalise(p) {
   for (const k of Object.keys(p)) {
     if (k !== 'rig' && k !== 'height' && !(k in CHANNELS)) {
       if (JOINT_KEYS.includes(k)) throw new TypeError(`'${k}' is a joint POSITION, not a rig channel: rig poses are joint ANGLES (${RIG_CHANNELS.join(', ')}). Move a hand or foot with rigReach/rigPlant, and read joint positions from the pose (pose.${k}) or jointWorld(figure,'${k}')`);
-      throw new TypeError(`Unknown rig channel '${k}'. Valid: ${RIG_CHANNELS.join(', ')}, height`);
+      const near = RIG_CHANNELS.filter((c) => c !== 'x' && (k.startsWith(c) || c.startsWith(k) || c.slice(0, -1) === k.slice(0, -1)));
+      throw new TypeError(`Unknown rig channel '${k}'.${near.length ? ` Did you mean ${near.map((c) => `'${c}'`).join(' or ')}? (spine, chest and neck have no F/B suffix.)` : ''} Valid: ${RIG_CHANNELS.join(', ')}, height`);
     }
   }
   const n = { rig: 1 };
@@ -199,19 +200,24 @@ function limb(root, target, L1, L2, parentAbs, sign, lim1, lim2) {
   const swing = best.swing <= lim1[1] ? best.swing : (best.swing - lim1[1] < lim1[0] + 360 - best.swing ? lim1[1] : lim1[0]);
   return { swing, flex: clamp(best.flex, lim2[0], lim2[1]) };
 }
-const side = (s) => { if (s !== 'F' && s !== 'B') throw new TypeError("Rig side must be 'F' or 'B'"); return s; };
+// Accepts 'F'/'B', and also a joint name such as 'hF' or 'fB' (models often pass those).
+const side = (s) => {
+  const v = typeof s === 'string' && /^[ehkf]?[FB]$/.test(s) ? s.slice(-1) : null;
+  if (!v) throw new TypeError(`Rig side must be 'F' (near limb) or 'B' (far limb), got ${JSON.stringify(s)}. Call rigReach(pose,'F',[x,y]) or rigPlant(pose,'B',[x,y])`);
+  return v;
+};
 const point = (t) => { if (!Array.isArray(t) || t.length !== 2 || !t.every(Number.isFinite)) throw new TypeError('Rig target must be a finite [x,y] array'); return t; };
 
 /** Move a hand to a local-space target [x,y]; the arm stays at its exact length (clamped to reach). */
 export function rigReach(pose, s, target, opts = {}) {
-  side(s); point(target);
+  s = side(s); point(target);
   const n = normalise(pose), L = lengths(opts.build), j = points(n, L, [n.x, -((n.height ?? groundHeight(n, L)) + n.lift)]);
   const chestAbs = (n.spine + n.chest) * DEG, r = limb(j.sh, target, L.upperArm, L.foreArm, chestAbs, 1, CHANNELS['shoulder' + s].slice(1), CHANNELS['elbow' + s].slice(1));
   return normalise({ ...n, ['shoulder' + s]: r.swing, ['elbow' + s]: r.flex });
 }
 /** Plant a foot on a local-space target [x,y] (y=0 is the floor). Freezes hip height so the body does not jump. */
 export function rigPlant(pose, s, target, opts = {}) {
-  side(s); point(target);
+  s = side(s); point(target);
   const n = normalise(pose), L = lengths(opts.build), h = n.height ?? groundHeight(n, L), hip = [n.x, -(h + n.lift)];
   const r = limb(hip, target, L.thigh, L.shin, 0, -1, CHANNELS['thigh' + s].slice(1), CHANNELS['knee' + s].slice(1));
   return normalise({ ...n, height: h, ['thigh' + s]: r.swing, ['knee' + s]: r.flex });
