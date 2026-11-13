@@ -16,6 +16,13 @@ class LocalAnimationTests(unittest.TestCase):
         self.assertEqual(normalize_source(source), expected)
         self.assertEqual(normalize_source(expected), expected)
 
+    def test_undefined_info_t_is_replaced_by_the_time_argument(self):
+        code = "registerShot('s001',{draw(g, t, info){ rigAdd(p, rigIdle(info.t)); const q = info.p + info.dur + info.time; }});"
+        scene, fixed = scene_result(json.dumps({'scene': 'Writes in a notebook', 'code': code}), 's001')
+        self.assertIn('rigIdle(t)', fixed)
+        self.assertIn('info.p + info.dur + info.time', fixed)
+        self.assertNotIn('info.t)', fixed)
+
     def test_regular_source_and_division_are_preserved(self):
         source = "const a = 20 / 2;\nconst b = 'literal\\n';\nconst c = /[\\/\\n]/;"
         self.assertEqual(normalize_source(source), source)

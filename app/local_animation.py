@@ -22,7 +22,8 @@ from '/engine/rig2d.js'. Use the existing drawFigure rig for characters, not a t
 Use standard CanvasRenderingContext2D methods, Math, and local helpers. No other imports,
 fetch, DOM, external assets, randomness,
 timers or browser APIs. No top-level drawing. The player calls draw(g,t,info) every frame;
-t is local seconds, info.p is progress 0..1, info.dur is duration. E.W and E.H are logical
+t is local seconds, info.p is progress 0..1, info.dur is duration. info has NO other fields:
+info.t is undefined (use the t argument, e.g. rigIdle(t)). E.W and E.H are logical
 stage dimensions (1920x1080 landscape, 1080x1920 portrait). Draw in those logical units;
 do not resize the canvas or use canvas.width/height for positioning.
 Register exactly the requested ID: registerShot('s001',{draw(g,t,info){...}}).
@@ -153,7 +154,18 @@ def scene_result(answer, shot_id):
     ids = re.findall(r"registerShot\(\s*['\"]([^'\"]+)['\"]", code)
     if ids != [shot_id]:
         raise ValueError('Scene must register only ' + shot_id)
-    return scene, code
+    return scene, fix_info_time(code)
+
+
+def fix_info_time(code):
+    """Models often write info.t, but info only has p and dur; the local seconds are the t argument.
+
+    info.t is undefined, so rigIdle(info.t) makes a NaN rig channel and the shot fails at render.
+    Rewrite it to the real argument, only when draw/overlay/init really name that argument t.
+    """
+    if re.search(r'\(\s*\w+\s*,\s*t\s*,\s*info\s*\)', code):
+        return re.sub(r'\binfo\.t\b(?!\s*=[^=])', 't', code)
+    return code
 
 
 def normalize_source(code):
