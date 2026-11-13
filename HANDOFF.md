@@ -7,7 +7,7 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
 
 - Checkout: `C:\Users\Joao\Desktop\2D-Animation-Studio-Setup`.
 - Repository: https://github.com/j0p3s/2d-studio-videos-youtube, branch `main`.
-  Published implementation `18def2f`; model-ignore update `cc6882e`; skeletal rig `5b7f753`; rig/prompt/caption follow-ups through `820e817`. Use Git refs for the
+  Published implementation `18def2f`; model-ignore update `cc6882e`; skeletal rig `5b7f753`; rig/prompt/caption follow-ups through `1685af6`. Use Git refs for the
   current tip. Direct source/documentation updates to `main` are authorized; no PR merge
   is necessary for a direct push. Source updates do not publish generated videos.
 - `.gitignore` excludes `models/` and `Models/` at every depth, common weight extensions,
@@ -108,6 +108,11 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
 
 ## Offline reliability and unfinished visual work
 
+- Generated scenes that read `info.t` (undefined; `info` has only `p` and `dur`) made rig channels NaN and
+  failed the shot at render ("Rig channel spine must be a finite number"); the repair retries could not
+  diagnose it. `scene_result` now rewrites `info.t` to the `t` argument (`1685af6`) and the scene prompt
+  says so. Found in `the-5-minute-habit-hack-that-guarantees-11131502`; its s002 was patched by hand
+  and renders without shot errors, but a fresh Auto run and the frames were not visually checked.
 - Ollama repetition-loop errors (`token repeat limit reached`) now receive bounded local
   recovery, not a quota/paywall message. Aborted answers are discarded; at most three
   attempts are made, adjusting sampling and GPT-OSS reasoning. Stop/other errors propagate.
