@@ -11,7 +11,7 @@ class OfflineSceneAuditTests(unittest.TestCase):
     def result(self, motion=.001, errors=None):
         return {'id':'s001','motion_ratio':motion,'color_spread':40,
                 'runtime_errors':errors or [],'missing':False,
-                'issues':(errors or []) + (['Little motion'] if motion<.008 else [])}
+                'issues':(errors or []) + (['Little motion'] if motion<.02 else [])}
 
     def test_repair_must_improve_flagged_motion_without_adding_runtime_errors(self):
         before = self.result()
@@ -24,6 +24,9 @@ class OfflineSceneAuditTests(unittest.TestCase):
         self.assertFalse(accept_repair(before,dict(self.result(.2),color_spread=5)))
         # Rounding at the threshold must not override an actual audit warning.
         self.assertFalse(accept_repair(before,dict(self.result(.008),issues=['Low residual motion'])))
+        # Near-static shots (about 1-2% of the action area changing) are not a fix.
+        self.assertFalse(accept_repair(before,self.result(.015)))
+        self.assertTrue(accept_repair(before,self.result(.03)))
         self.assertFalse(accept_repair(dict(before,figure_draws=24),dict(self.result(.2),figure_draws=0)))
 
     def fixture(self, folder, manual=False):

@@ -104,6 +104,19 @@ meet its position. Give a seated character bent knees and a chair, not standing 
 Use cinematic lighting, rim light, shadows and depth. Keep the same character design between
 shots: ink-black face, white eyes, teal hoodie. Mix close-ups and wide compositions. Avoid title
 cards and full narration text; the player already draws captions. Never draw a blank substitute.
+PROPS, POSES AND LEGIBILITY: a prop the character uses (notebook, pen, phone, cup) is drawn
+at jointWorld(fig,'hF') or on a surface the hand visibly meets, never at a fixed spot the hand
+ignores. For writing, put the page on a desk at hand height in front of the figure and move the
+hand across it with rigReach, e.g. rigReach(pose,'F',[45+8*Math.sin(t*5),-100]); a reach target
+is [forward, height] in rig units with height NEGATIVE upward, so a hand at the hip is about y=-100
+and an arbitrary pair such as [30,-80] only lowers the hand beside the body. Never fold a standing
+figure forward with spine, chest and neck together above about 40 degrees: it reads as a bow, not
+as waking up. Waking or getting up means sitting on the edge of a drawn bed (pose 'sit' with the
+bed top 50 rig units above the feet) and then standing. Close-ups: the whole head and both
+shoulders stay inside the frame; never combine the close-up scale s=E.H/200 with the full-body y.
+Every shot needs a visible change between its first and last frame (an arm, the head, a prop
+or the camera), because near-static shots are rejected. Any text or page drawn in the scene
+must be at least E.H*0.03 high or not drawn; never draw unreadable micro text.
 Return JSON only: {"scene":"specific action description","code":"complete ES module source"}.
 """
 

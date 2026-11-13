@@ -35,7 +35,7 @@ def accept_repair(before, after):
         return False
     # Clear the thresholds, not just a tiny relative gain. Also reject regressions
     # in a previously healthy measurement when repairing a different problem.
-    if after['motion_ratio'] < .008:
+    if after['motion_ratio'] < .02:  # keep equal to the threshold in offline_scene_audit.mjs
         return False
     if after['color_spread'] < 9:
         return False

@@ -100,7 +100,7 @@ try{
   const spread=Math.sqrt(pixels.reduce((a,b)=>a+(b-mean)**2,0)/pixels.length);
   const errors=[...new Set(samples.flatMap(s=>s.errors).filter(e=>e.includes(shot.id)))];
   const issues=[];if(!shot.ok)issues.push('Missing scene module');if(errors.length)issues.push(...errors);
-  if(motion<.008)issues.push('Very little residual motion in action area after compensating for camera movement');
+  if(motion<.02)issues.push('Very little residual motion in action area after compensating for camera movement');
   if(spread<9)issues.push('Action area is nearly uniform; subject or scene detail may be absent');
   results.push({id:shot.id,motion_ratio:+motion.toFixed(4),raw_motion_ratio:+rawMotion.toFixed(4),color_spread:+spread.toFixed(2),issues,
    frames_checked:last-first+1,sample_times:samples.map(s=>s.time),
