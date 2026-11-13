@@ -32,9 +32,11 @@ not a blank gradient. Keep a dark navy/charcoal value structure, one warm window
 teal accents, shadows, and warm rim light. Use the SAME teal hoodie, ink-black face and
 white facial features in every shot. Ground figures and props in the environment.
 For a full-body shot the character occupies 45-65% of frame HEIGHT, feet near E.H*0.72.
+A standing figure is about 234 rig units tall, so use scale s=E.H/420 (about 56% of the
+frame) for full-body shots, never a smaller scale; close-ups use a larger s.
 Close-ups must frame the face or hands/prop much larger; diagram and insert shots do not
 need a standing figure. Never repeat a full-body pose just to fill a shot.
-drawFigure(g,{x:E.W*0.45,y:E.H*0.72,s:E.H/500,pose:pose('stand'),expr:'determined',
+drawFigure(g,{x:E.W*0.45,y:E.H*0.72,s:E.H/420,pose:pose('stand'),expr:'determined',
 outfit:{top:'hoodie',color:'#228c80'}}) draws a properly sized existing character.
 SKELETAL RIG (preferred for every character): also import {rigPose, rigBlend, rigSample,
 rigAdd, rigIdle, rigReach, rigPlant, rigWalk, rigRun, rigWalkSpeed, jointWorld} from '/engine/rig2d.js'
@@ -63,7 +65,14 @@ pose, rigReach or rigPlant can do it. Rig poses hold ANGLES only: never pass joi
 To attach a prop to a hand or foot, build the figure options once,
 const fig={x,y,s,pose:q,...}; drawFigure(g,fig); const h=jointWorld(fig,'hF'); and draw the
 prop at h[0],h[1] (jointWorld returns SCREEN coordinates; use 'hB' for the far hand, 'fF'
-for a foot). Never compute screen positions by multiplying a pose joint by the scale yourself. Rig poses are plain objects: copy with rigPose(p,{...}).
+for a foot). Never compute screen positions by multiplying a pose joint by the scale yourself.
+Props the character holds, uses or touches must be placed from jointWorld every frame; a prop
+that is not held must sit on a visible surface or the floor, never float, and every prop
+must serve the narration. A hand reaches only about 70 rig units from its shoulder (shoulder
+about [0,-174] standing, [0,-124] seated), and rigReach/rigPlant targets are RIG units, not
+screen pixels: to reach a screen point (px,py) pass [(px-x)/s,(py-y)/s] where x,y,s are the
+figure's screen position and scale. If the point is farther than 70*s from jointWorld(fig,'sh'),
+the hand falls short, so move the prop or the figure closer first. Rig poses are plain objects: copy with rigPose(p,{...}).
 The older pose()/blendPose()/walkPose() joint-array API still works. Its poses include stand,
 crossArms, handsOnHead; blendPose('stand','handsOnHead',k) returns a pose. walkPose(t*6)
 returns a walking pose. Legacy pose joint arrays are head, sh, hip,
