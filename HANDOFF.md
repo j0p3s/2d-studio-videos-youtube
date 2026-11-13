@@ -7,7 +7,7 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
 
 - Checkout: `C:\Users\Joao\Desktop\2D-Animation-Studio-Setup`.
 - Repository: https://github.com/j0p3s/2d-studio-videos-youtube, branch `main`.
-  Published implementation `18def2f`; model-ignore update `cc6882e`. Use Git refs for the
+  Published implementation `18def2f`; model-ignore update `cc6882e`; skeletal rig `5b7f753`. Use Git refs for the
   current tip. Direct source/documentation updates to `main` are authorized; no PR merge
   is necessary for a direct push. Source updates do not publish generated videos.
 - `.gitignore` excludes `models/` and `Models/` at every depth, common weight extensions,
@@ -130,8 +130,16 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
 - Characters: new skeletal rig (`app/skeleton.mjs`, docs in the offline guide). Poses are fixed-length
   bone angles with joint limits, IK reach/plant and planted-foot walk/run; they solve to the existing
   11 joints, so the old `pose()` API and all checkers still work. Installed by `patch_rig.py`
-  (upgrades already-patched studios); the local animation prompt prefers it. Not yet committed or
-  pushed; not yet proven in a full generated video. Hoodie/face rendering itself is unchanged.
+  (upgrades already-patched studios); the local animation prompt (`SCENE_GUIDE`) prefers it for
+  Ollama scene generation and repair, but this is guidance only: the model may still write legacy
+  joint arrays, which the checker accepts. Published in `5b7f753` on `main`. `SCENE_GUIDE` is part of
+  the scene cache key, so non-manual projects may regenerate scenes on their next offline run; manual
+  or approved scenes are kept. `offline_cinematic.js` (approved reference) still uses the old pose API.
+  Verified: 34 JS and 154 Python tests, one skeleton scene through the scene checker, contact sheets
+  of every pose and gait, and a render through the real `drawFigure`. Not verified: how well the local
+  Ollama model follows the new API, the run cycle's look (slightly crouched), or a full new video.
+  Hoodie/face rendering is unchanged (uniform-width limbs; tapered limbs/hands/feet are a possible
+  next step). Restart the GUI to load the engine update.
 
 - Pipeline: ideas/script → English narration → kit animation, OpenArt or CastWorkshop clips → thumbnail →
   explicit YouTube Publish. Nothing is uploaded merely by generating a video.
