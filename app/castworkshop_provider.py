@@ -172,7 +172,8 @@ class Session:
         env['PYTHONFAULTHANDLER'] = '1'
         port = str(urlsplit(self.url).port or 80)
         with (self.cache / 'server.log').open('a', encoding='utf-8') as log:
-            self.process = subprocess.Popen([str(self.python), str(self.comfy / 'main.py'),
+            bootstrap = Path(__file__).resolve().parents[1] / 'integrations/castworkshop/test-kit/comfy_bootstrap.py'
+            self.process = subprocess.Popen([str(self.python), str(bootstrap), str(self.comfy / 'main.py'),
                 '--listen', urlsplit(self.url).hostname, '--port', port, '--lowvram', '--disable-dynamic-vram', '--disable-auto-launch',
                 '--offline'], cwd=self.comfy, env=env, stdout=log, stderr=subprocess.STDOUT,
                 creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))

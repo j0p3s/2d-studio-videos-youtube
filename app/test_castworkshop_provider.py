@@ -1,10 +1,12 @@
 import json
 import ast
+import importlib.util
+import sys
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from types import SimpleNamespace
+from types import SimpleNamespace, ModuleType
 
 import castworkshop_provider as cast
 from ai_providers import PROVIDERS, TEXT_PROVIDERS
@@ -44,6 +46,28 @@ class CastWorkshopTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'ComfyUI exited'):
                 self.session.generate(self.graph, '57', self.destination, 'image')
         self.assertEqual(json.loads(state.read_text())['prompt_id'], 'server-exited-job')
+
+    def test_bootstrap_selects_pread_without_changing_other_frameworks(self):
+        path = Path(__file__).resolve().parents[1] / 'integrations/castworkshop/test-kit/comfy_bootstrap.py'
+        spec = importlib.util.spec_from_file_location('cast_bootstrap_test', path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        calls = []
+        package, torch_module = ModuleType('safetensors'), ModuleType('safetensors.torch')
+        def original(*args, **kwargs):
+            calls.append((args, kwargs))
+            return 'reader'
+        package.safe_open = original
+        package.torch = torch_module
+        torch_module.safe_open = original
+        with patch.dict(sys.modules, {'safetensors': package, 'safetensors.torch': torch_module}):
+            module.install_pread()
+            self.assertEqual(package.safe_open('model', framework='pt'), 'reader')
+            torch_module.safe_open('model', 'pt', backend='mmap')
+            package.safe_open('model', framework='np')
+        self.assertEqual(calls[0][1]['backend'], 'pread')
+        self.assertEqual(calls[1][1]['backend'], 'pread')
+        self.assertNotIn('backend', calls[2][1])
 
     def test_remote_or_credentialed_endpoints_are_rejected(self):
         for url in ('https://localhost:8190', 'http://example.com', 'http://127.0.0.1.evil.test',

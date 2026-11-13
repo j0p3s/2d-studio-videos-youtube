@@ -36,6 +36,7 @@ is preserved and reported for review, never silently overwritten.
 integrations/castworkshop/
   Launch.cmd             one menu for checks, import and launch
   portable.py             importer/launcher (no extra Python dependencies)
+  test-kit/              maintained test launcher and pread ComfyUI bootstrap
   README.md
   apps/ComfyUI/           application and custom nodes
   apps/CastWorkshop/      application and private local configuration

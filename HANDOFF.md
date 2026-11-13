@@ -53,6 +53,11 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
 - Completed media and job IDs survive restarts. Ambiguous submissions are not blindly
   resubmitted; queues and upstream GPU locks are checked. Stop can leave an accepted job
   running. Changed generation inputs require a fresh Studio project to preserve jobs.
+- Follow-up log: MOSS voice succeeded (29.78s); H3 server exited with 0xC0000005 in
+  safetensors/PyTorch mapped encoder loading. The full encoder SHA256 matches the pinned
+  manifest. Added source/test-folder `comfy_bootstrap.py` to select the installed `pread`
+  backend without editing ComfyUI. Isolated loading of all 2,054 encoder tensors passed.
+  Full video generation is still unverified. Preserve completed reference.png and voice.flac.
 - Upstream checkout `24a9462` and the linked setup/model/performance/voice documentation
   informed this adapter. No third-party code or weights are bundled in the source commit.
   Studio GUI initialized with isolated settings; screenshot capture timed out, so no visual
@@ -160,7 +165,7 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
 
 ## Validation and remaining limits
 
-- Latest automated results: **147 Python tests and 16 Node tests pass**, plus nine standalone
+- Latest automated results: **148 Python tests and 16 Node tests pass**, plus nine standalone
   D: launcher tests, plus clean Python syntax and Git whitespace checks. Run the commands
   in [README](README.md#validation) from the checkout root.
 - Real approved-project audit: **1,624 frames, 120 snapshots, 15 shots**, zero runtime failures

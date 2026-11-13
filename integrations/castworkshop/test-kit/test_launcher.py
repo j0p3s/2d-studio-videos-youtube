@@ -164,7 +164,7 @@ def start_server():
         return None
     log = (LOGS / 'comfy-server.log').open('a', encoding='utf-8')
     try:
-        process = subprocess.Popen([str(PYTHON), 'main.py', '--listen', '127.0.0.1', '--port', '8190',
+        process = subprocess.Popen([str(PYTHON), str(ROOT / 'comfy_bootstrap.py'), str(COMFY / 'main.py'), '--listen', '127.0.0.1', '--port', '8190',
                                     '--lowvram', '--disable-dynamic-vram', '--disable-auto-launch'], cwd=COMFY, env=environment(),
                                    stdout=log, stderr=subprocess.STDOUT, creationflags=FLAGS)
         SERVER_PROCESS = process

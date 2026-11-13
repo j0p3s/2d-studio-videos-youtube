@@ -32,6 +32,10 @@ approximately 15-second H3 video. First setup may download many gigabytes.
 - Server exits and repeated connection failures now stop polling with a diagnostic;
   the accepted job ID is preserved. An unresolved state must be inspected before retrying.
   Do not delete states just to bypass a running or ambiguous job.
+- Keep **comfy_bootstrap.py** alongside the launcher. It selects the installed safetensors
+  non-mapped `pread` reader to avoid the observed Windows H3 encoder access violation.
+  The encoder passed its pinned SHA256 check and loaded all 2,054 tensors in an isolated
+  loader test. This does not yet certify a full H3 render. Completed image/voice files are reused.
 - Final checks require FFprobe to find audio, video and approximately the requested duration.
   They do not certify acting, visual quality or lip synchronization.
 

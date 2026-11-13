@@ -59,6 +59,12 @@ Auto in this version. The log identifies these limitations instead of claiming t
   to 8190. The adapter refuses a responding server whose command line does not identify
   the configured installation. If the standalone D: test's server is still running,
   close that idle server or use a different free port for Studio.
+- The Windows launcher uses `comfy_bootstrap.py` to select safetensors' `pread` reader for
+  PyTorch files before ComfyUI starts. This bypasses the mapped-reader path that crashed
+  loading the H3 encoder, without changing ComfyUI's repository or model files. The encoder's
+  complete SHA256 matched the pinned manifest, and an isolated `pread` load read all 2,054
+  tensors successfully. Full H3 generation remains a separate acceptance check. See the
+  [upstream mapped-loader report](https://github.com/Comfy-Org/ComfyUI/issues/15424).
 - The upstream GPU lock and queue checks prevent overlapping submissions. Text-model
   generation completes and the selected Ollama model unloads before GPU media generation.
 - Stop ends Studio's waiting. A job already accepted by ComfyUI may continue. Its saved
@@ -123,5 +129,8 @@ The server stopped during that attempt without a Python traceback; its cause is 
 confirmed. Server-exit detection, bounded connection recovery and fault-handler logging
 are now enabled. The confirmed stopped voice job had no output and was archived under
 `D:\CastWorkshop-Test\logs\update-backups/` before preparing a deliberate retry.
-The updated low-VRAM policy still requires a real generation check. A complete final
-video, Studio Auto GPU run and relocated portable stack remain unverified. No models moved.
+The next run completed MOSS voice generation in 29.78 seconds, then H3 exited with
+`0xC0000005` while loading the text encoder through the mapped safetensors path. The new
+non-mapped loader passed the isolated full-encoder load. Completed image and voice media
+are preserved. A complete video, Studio Auto GPU run and relocated portable stack remain
+unverified. No models moved.

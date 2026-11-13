@@ -199,9 +199,11 @@ def launch(app):
         raise RuntimeError('Portable import has not finished successfully. Run Import first.')
     name = 'comfy' if app == 'ComfyUI' else 'cast'
     junction(ROOT / 'apps' / app / 'models', ROOT / 'models' / ('comfyui' if name == 'comfy' else 'castworkshop'))
-    command = [str(python_path(name)), '-s', 'main.py' if name == 'comfy' else 'start.py']
+    command = [str(python_path(name)), '-s', 'start.py']
     if name == 'comfy':
-        command += ['--listen', '127.0.0.1']
+        command = [str(python_path(name)), '-s', str(ROOT / 'test-kit/comfy_bootstrap.py'),
+                   str(ROOT / 'apps/ComfyUI/main.py'), '--listen', '127.0.0.1',
+                   '--lowvram', '--disable-dynamic-vram']
     return subprocess.call(command, cwd=ROOT / 'apps' / app, env=environment())
 
 
