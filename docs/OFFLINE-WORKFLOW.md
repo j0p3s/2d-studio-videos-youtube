@@ -183,11 +183,40 @@ does not establish the active model's attention implementation, CPU fallback or 
 Inspect device/completion messages and actual error status. Python `flash-attn` is a separate
 package from Ollama Flash Attention; installing it does not accelerate Ollama requests.
 
+## Skeletal character rig
+
+Characters are driven by a bone hierarchy (`app/skeleton.mjs`) instead of loose joint
+coordinates. Bones have fixed lengths (spine 36+38, neck 34, arms 38+38, legs 50+50), a pose is
+a set of joint **angles** in degrees, and every angle is clamped to an anatomical limit, so a
+pose cannot stretch a limb or bend a knee/elbow backwards. `rigJoints()` solves a pose to the
+same 11 joints the hoodie renderer already draws, so `drawFigure`, `headPos`, `jointWorld`,
+`armPose` and the offline scene audit accept skeleton poses and the old `pose()` API alike.
+
+- `rigPose('talk')`, `rigPose('stand', {shoulderF: 80, elbowF: 20})`: named poses (stand, relaxed,
+  talk, explain, point, crossArms, handsOnHead, cheer, shrug, think, wave, slump, sit, sitSlump)
+  and angle channels `spine chest neck shoulderF/B elbowF/B thighF/B kneeF/B x lift`. F is the
+  near limb, B the far limb. Unknown channels throw, so model typos fail loudly.
+- `rigBlend`, `rigSample` (keyframes with easing or hold), `rigAdd(pose, rigIdle(t))` animate by
+  angle, so limbs keep their length mid-blend (blending joint coordinates shortens them).
+- `rigReach(pose, 'F', [x, y])` puts a hand on a target and `rigPlant` plants a foot, using
+  two-bone IK that clamps to the true reach and respects the elbow/knee limits.
+- `rigWalk(phase)` / `rigRun(phase)` are gait cycles with planted feet; move the figure by
+  `rigWalkSpeed(opts, cycleSeconds) * scale` per second so stance feet do not slide.
+- `drawFigure(g, {pose, build: 'tall' | 'stocky' | 'lanky'})` scales bone lengths per character.
+- Poses are authored in rig units with the feet on y=0. Existing joint-array poses can be fitted
+  with `rigFromJoints()`, which keeps bone directions and corrects lengths.
+
+`patch_rig.py` installs `skeleton.mjs` into the studio engine and makes `rig2d.js` re-export it;
+it upgrades studios that already have the older rig safety patch. The local ScriptForge/animation
+prompt (`SCENE_GUIDE` in `local_animation.py`) tells the model to prefer this API.
+Restart the GUI after updating. Visual quality of the new poses and gaits was reviewed on
+contact sheets and one rendered scene, not across a full new video.
+
 ## Verification
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s app -p "test_*.py"
-node --test app\video_encoder.test.mjs app\offline_motion.test.mjs app\offline_geometry.test.mjs app\rig_safety.test.mjs
+node --test app\video_encoder.test.mjs app\offline_motion.test.mjs app\offline_geometry.test.mjs app\rig_safety.test.mjs app\skeleton.test.mjs
 git diff --check
 ```
 

@@ -222,7 +222,7 @@ Run checks from the project root:
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s app -p "test_*.py"
-node --test app\video_encoder.test.mjs app\offline_motion.test.mjs app\offline_geometry.test.mjs app\rig_safety.test.mjs
+node --test app\video_encoder.test.mjs app\offline_motion.test.mjs app\offline_geometry.test.mjs app\rig_safety.test.mjs app\skeleton.test.mjs
 git diff --check
 ```
 

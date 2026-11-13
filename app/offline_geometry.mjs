@@ -67,7 +67,8 @@ export function instrumentModule(source, kind) {
     if(globalThis.__auditFinding) {
       globalThis.__auditFigureSeen?.();
       if(JSON.stringify(POSES)!==__auditPoseJSON) globalThis.__auditFinding('Shared POSES mutated: deep-copy joint arrays before editing; accumulated edits make playback depend on render order');
-      for(const issue of inspectFigure(o, __auditPoseBaseline)) globalThis.__auditFinding(issue);
+      const __auditO = typeof isRigPose==='function' && isRigPose(o.pose) ? {...o, pose: rigJoints(o.pose, {build:o.build})} : o;
+      for(const issue of inspectFigure(__auditO, __auditPoseBaseline)) globalThis.__auditFinding(issue);
     }`) + '\nconst __auditPoseJSON=JSON.stringify(POSES), __auditPoseBaseline=JSON.parse(__auditPoseJSON);\n';
   return source.replace(signature, signature + `
     const originalDraw = def.draw;

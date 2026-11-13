@@ -36,8 +36,26 @@ Close-ups must frame the face or hands/prop much larger; diagram and insert shot
 need a standing figure. Never repeat a full-body pose just to fill a shot.
 drawFigure(g,{x:E.W*0.45,y:E.H*0.72,s:E.H/500,pose:pose('stand'),expr:'determined',
 outfit:{top:'hoodie',color:'#228c80'}}) draws a properly sized existing character.
-Rig poses include stand, crossArms, handsOnHead. blendPose('stand','handsOnHead',k)
-returns a pose. walkPose(t*6) returns a walking pose. Pose joint arrays are head, sh, hip,
+SKELETAL RIG (preferred for every character): also import {rigPose, rigBlend, rigSample,
+rigAdd, rigIdle, rigReach, rigPlant, rigWalk, rigRun, rigWalkSpeed} from '/engine/rig2d.js'
+and pass the result straight to drawFigure as pose. The skeleton has fixed-length bones, so
+a pose can never stretch a limb or bend a joint backwards. rigPose('talk') uses a named pose:
+stand, relaxed, talk, explain, point, crossArms, handsOnHead, cheer, shrug, think, wave,
+slump, sit, sitSlump. rigPose('stand',{shoulderF:80,elbowF:20}) overrides joint ANGLES in
+degrees (F = near limb, B = far limb): spine, chest, neck (forward lean), shoulderF/B (arm
+swing from hanging down, forward positive, about 150+ is overhead), elbowF/B (bend 0..150),
+thighF/B (leg swing, forward positive), kneeF/B (bend 0..150), x (hip offset), lift (jump
+height). Unknown channel names throw. rigBlend(a,b,k) blends two poses or names;
+rigSample([[0,'stand'],[1.2,'talk'],[3,'point']],t) animates keyframes with easing;
+rigAdd(pose,rigIdle(t)) adds breathing; rigReach(pose,'F',[x,y]) puts the hand on a target
+in rig units (feet at y 0, head about -208, +x forward) with the arm at its true length;
+rigPlant(pose,'F',[x,y]) plants a foot. rigWalk(t*2*Math.PI/cycleSeconds) and rigRun(...)
+are walk/run cycles with planted feet: move the figure by rigWalkSpeed({},cycleSeconds)*s*t
+screen units so the feet do not slide. Never write joint coordinates by hand when a rig
+pose, rigReach or rigPlant can do it. Rig poses are plain objects: copy with rigPose(p,{...}).
+The older pose()/blendPose()/walkPose() joint-array API still works. Its poses include stand,
+crossArms, handsOnHead; blendPose('stand','handsOnHead',k) returns a pose. walkPose(t*6)
+returns a walking pose. Legacy pose joint arrays are head, sh, hip,
 eF,hF,eB,hB,kF,fF,kB,fB, in local rig units; use object spread to change the required joints.
 Each pose is relative to the feet (head y about -208). Use outfit:{top:'hoodie',
 color:'#228c80'} consistently. Only add a prop if the storyboard/narration needs it; fix its

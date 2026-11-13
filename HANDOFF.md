@@ -127,6 +127,12 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
 
 ## Current product behavior
 
+- Characters: new skeletal rig (`app/skeleton.mjs`, docs in the offline guide). Poses are fixed-length
+  bone angles with joint limits, IK reach/plant and planted-foot walk/run; they solve to the existing
+  11 joints, so the old `pose()` API and all checkers still work. Installed by `patch_rig.py`
+  (upgrades already-patched studios); the local animation prompt prefers it. Not yet committed or
+  pushed; not yet proven in a full generated video. Hoodie/face rendering itself is unchanged.
+
 - Pipeline: ideas/script → English narration → kit animation, OpenArt or CastWorkshop clips → thumbnail →
   explicit YouTube Publish. Nothing is uploaded merely by generating a video.
 - Script providers: Claude, OpenAI (Codex), Gemini CLI, Gemini API and Ollama. Animation

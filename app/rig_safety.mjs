@@ -1,12 +1,14 @@
 // Shared, deterministic rig math. No DOM or renderer dependencies.
+import {isRigPose, rigJoints, rigReach, rigPose} from './skeleton.mjs';
 export const JOINTS=['head','sh','hip','eF','hF','eB','hB','kF','fF','kB','fB'];
 export function assertPose(p) {
  for(const k of JOINTS)if(!Array.isArray(p?.[k])||p[k].length!==2||!p[k].every(Number.isFinite))
   throw new TypeError(`Rig joint ${k} must be a finite [x,y] array`);
  return p;
 }
-export function clonePose(p){assertPose(p);return Object.fromEntries(JOINTS.map(k=>[k,[...p[k]]]));}
+export function clonePose(p){if(isRigPose(p))return rigPose(p);assertPose(p);return Object.fromEntries(JOINTS.map(k=>[k,[...p[k]]]));}
 export function armPose(p,target,side='F',bend=1) {
+ if(isRigPose(p)){if(Math.abs(bend)!==1)throw new TypeError('Invalid arm target');return rigReach(p,side,target)}
  const q=clonePose(p), shoulder=q.sh;
  if(!['F','B'].includes(side)||!Array.isArray(target)||!target.every(Number.isFinite)||target.length!==2||Math.abs(bend)!==1)throw new TypeError('Invalid arm target');
  const a=38,b=38,dx=target[0]-shoulder[0],dy=target[1]-shoulder[1];
@@ -18,7 +20,7 @@ export function armPose(p,target,side='F',bend=1) {
  return q;
 }
 export function jointWorld(o,key) {
- const p=assertPose(o.pose);if(!JOINTS.includes(key))throw new TypeError('Unknown joint '+key);
+ const p=assertPose(isRigPose(o.pose)?rigJoints(o.pose,{build:o.build}):o.pose);if(!JOINTS.includes(key))throw new TypeError('Unknown joint '+key);
  if(![o.x,o.y,o.s??1,o.facing??1,o.rot??0].every(Number.isFinite))throw new TypeError('Non-finite figure transform');
  let [x,y]=p[key];const s=(o.s??1)*(o.outfit?.kid ? .72 : 1),f=o.facing??1;
  if(o.rot){const [hx,hy]=p.hip,c=Math.cos(o.rot),n=Math.sin(o.rot);[x,y]=[hx+(x-hx)*c-(y-hy)*n,hy+(x-hx)*n+(y-hy)*c]}
