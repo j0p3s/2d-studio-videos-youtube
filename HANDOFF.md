@@ -118,7 +118,9 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
   `jointWorld`, writing reach targets (y negative upward), no folded-bow poses, close-up scale/anchor and minimum text size;
   the audit low-motion threshold is 0.02 (was 0.008; `offline_scene_audit.mjs` and `accept_repair` must match). That
   project's four scenes were rebuilt by hand and marked manual (originals in `scenes/backup-auto-1500`); audit motion
-  0.77/0.13/0.18/0.90, stills reviewed. A fresh automatic run with the new prompt has not been checked, nor the full video.
+  0.77/0.13/0.18/0.90. The user watched the re-rendered video (`out/final.mp4`, 19.94s, 9:16) and approved its animation
+  on 2026-11-13. That approval covers these hand-built scenes only: a fresh automatic run with the new prompt has not
+  been checked, and the thumbnail step (Auto 5/5) has not been run for it.
 - Ollama repetition-loop errors (`token repeat limit reached`) now receive bounded local
   recovery, not a quota/paywall message. Aborted answers are discarded; at most three
   attempts are made, adjusting sampling and GPT-OSS reasoning. Stop/other errors propagate.
