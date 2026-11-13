@@ -1,7 +1,7 @@
 """2D Animation Studio - Windows GUI.
 
-Pipeline:  ScriptForge (ideas + script, via the selected AI)  ->  voiceover (edge-tts or your file)
-           ->  GrowKaz Stickman Studio animation (the selected agent runs the make-2d-video skill)
+Pipeline:  ideas + script (via the selected AI)  ->  voiceover (edge-tts or your file)
+           ->  stick-figure animation (the selected agent runs the make-2d-video skill)
                or OpenArt AI shots cut to the narration (shots_video + openart_provider, no agent)
            ->  thumbnail  ->  YouTube upload (YouTube Data API v3).
 """
@@ -89,7 +89,7 @@ NICHES = {
 }
 CUSTOM = "Custom sub-niche..."
 VOICES = ENGLISH_VOICES
-STYLES = {"Emerald (GrowKaz)": "emerald", "Ember Forge": "ember", "Arctic Glass": "arctic",
+STYLES = {"Emerald": "emerald", "Ember Forge": "ember", "Arctic Glass": "arctic",
           "Sakura Bloom": "sakura", "Retro Print": "retro", "Let AI choose": "auto"}
 OA_MODES = {"Stills + AI video clips": True, "Stills only (Ken Burns, cheaper)": False}
 CATEGORIES = {"Education": "27", "Science & Technology": "28", "Entertainment": "24",
@@ -298,7 +298,7 @@ class Studio(ctk.CTk):
         sb.grid_propagate(False)
         ctk.CTkLabel(sb, text="✦ 2D Animation\n    Studio", font=ctk.CTkFont(size=24, weight="bold"),
                      justify="left", text_color=ACCENT).pack(anchor="w", padx=22, pady=(26, 4))
-        ctk.CTkLabel(sb, text="ScriptForge × GrowKaz Stickman", text_color=MUTED,
+        ctk.CTkLabel(sb, text="Script, voice, video, upload", text_color=MUTED,
                      font=ctk.CTkFont(size=14)).pack(anchor="w", padx=24, pady=(0, 22))
         self.nav = {}
         for key, label in [("setup", "⚙   Setup & Tools"), ("script", "①   Script"), ("voice", "②   Voiceover"),
@@ -1267,7 +1267,7 @@ class Studio(ctk.CTk):
                 ("FFmpeg", "found" if which("ffmpeg") and which("ffprobe") else None),
                 ("Git", probe(["git", "--version"]) if which("git") else None),
                 ("Claude Code CLI", probe([claude_exe(), "--version"]) if claude_exe() else None),
-                ("GrowKaz studio kit", str(STUDIO) if (STUDIO / "render.mjs").exists() else None),
+                ("Animation kit", str(STUDIO) if (STUDIO / "render.mjs").exists() else None),
                 ("three.js + Playwright", "installed" if (STUDIO / "node_modules" / "three").exists()
                  and (STUDIO / "node_modules" / "playwright").exists() else None),
                 ("Local skills (video + script)", "installed" if (SKILLS_DIR / "make-2d-video" / "SKILL.md").exists()
@@ -1434,7 +1434,7 @@ class Studio(ctk.CTk):
 
     # ================================================================== SCRIPT PAGE
     def _page_script(self, p):
-        self.header(p, "① Script — ScriptForge", "Pick a niche, get 10 ideas from your selected AI, choose one, "
+        self.header(p, "① Script", "Pick a niche, get 10 ideas from your selected AI, choose one, "
                     "and get a full narrated script with titles, tags and thumbnail text.")
         top = self.card(p)
         top.grid_columnconfigure(5, weight=1)
@@ -2083,7 +2083,7 @@ class Studio(ctk.CTk):
 
     # ================================================================== ANIMATE PAGE
     def _page_animate(self, p):
-        self.header(p, "③ Animate — GrowKaz Stickman Studio", "the selected agent runs the make-2d-video skill end to end: "
+        self.header(p, "③ Animate", "the selected agent runs the make-2d-video skill end to end: "
                     "timestamps (Whisper), shot plan, code-drawn 2D/3D scenes, render, music, SFX and the final MP4. "
                     "Long videos can take a while — leave it running.")
         c = self.card(p)
@@ -2158,7 +2158,7 @@ class Studio(ctk.CTk):
             self.opt_aspect.set("9:16" if shorts else "16:9")
             (self.chk_capt.select if shorts else self.chk_capt.deselect)()
         if not self.opt_style.get() or self.opt_style.get() not in STYLES:
-            self.opt_style.set("Emerald (GrowKaz)")
+            self.opt_style.set("Emerald")
         if not self.ent_look.get() and self.s.get("look"):
             self._set(self.ent_look, self.s["look"])
         self.lbl_anim_src.configure(
@@ -2404,7 +2404,7 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
             messagebox.showwarning("Animate", "Animation agent finished but no MP4 was found. Read the log, "
                                               "or continue in the interactive agent window.")
 
-    # ---- OpenArt: AI-generated shots cut to the narration (no GrowKaz kit, no agent)
+    # ---- OpenArt: AI-generated shots cut to the narration (no animation kit, no agent)
     def _openart_ready(self):
         if self.offline():
             raise RuntimeError("OpenArt needs the internet. Turn off \"Always work offline\" in Setup, "
@@ -2454,7 +2454,7 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
             self.log(self.anim_log, f"Save credits: images only, local reframing, {DEFAULT_RESOLUTION}. No paid AI video clips.")
         self.log(self.anim_log, f"▶ OpenArt: {n} shots × ~{seconds:g} s for a {dur:.0f} s voiceover → {project}")
         if self.opt_music.get() == "Generated by mood":
-            self.log(self.anim_log, "Music by mood is made by the GrowKaz kit; an OpenArt video uses your own track or none.")
+            self.log(self.anim_log, "Music by mood is made by the animation kit; an OpenArt video uses your own track or none.")
         if self.chk_capt.get():
             self.log(self.anim_log, "Burned-in captions are not available for OpenArt videos (no word timestamps).")
         narration = self.s.get("narration") or Path(self.s["script_file"]).read_text(encoding="utf-8")
@@ -2514,7 +2514,7 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
             return opts
         self.run_job("Designing characters", work, self._pick_character)
 
-    # ---- Animate progress: read the pipeline's own files (files are the truth in the GrowKaz skill)
+    # ---- Animate progress: read the pipeline's own files (files are the truth in the animation skill)
     _anim_hint, _anim_pass = "", ""
     HINTS = [("transcribe.py", "timestamps (Whisper)"), ("parse_script.py", "reading timestamps"),
              ("new_project.py", "creating the project"), ("beats.py", "beat sheet"),

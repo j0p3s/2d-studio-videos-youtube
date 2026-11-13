@@ -1,13 +1,13 @@
 # 2D Animation Studio (Windows)
 
-A one-click setup and desktop app for making faceless, animated, stick-figure YouTube videos with Claude Code, OpenAI Codex or Gemini, then uploading them. It does the same thing as the Grow With Kaz tutorial without the copy-paste steps.
+A one-click setup and desktop app for making faceless, animated, stick-figure YouTube videos with Claude Code, OpenAI Codex or Gemini, then uploading them.
 
 ## Install
-0. The GrowKaz Stickman kit is not part of this repository. Get `GrowKaz_Stickman.plugin` from its author (Grow With Kaz) and put it in the `plugin\` folder beside the installer, or in your Downloads folder.
+0. The animation kit is not part of this repository. Get `GrowKaz_Stickman.plugin` and put it in the `plugin\` folder beside the installer, or in your Downloads folder.
 1. Double-click **`Install-2D-Studio.cmd`**. It installs whatever is missing:
    - Git, Node.js LTS, Python 3.12 and FFmpeg (through winget)
    - the Claude Code CLI
-   - the **GrowKaz Stickman Studio**, taken from `plugin\GrowKaz_Stickman.plugin`, along with three.js, Playwright and a headless Chromium
+   - the **animation studio kit**, taken from `plugin\GrowKaz_Stickman.plugin`, along with three.js, Playwright and a headless Chromium
    - Python packages: numpy, scipy, faster-whisper, edge-tts, piper-tts, customtkinter, Pillow and the YouTube API client
    - Claude Code skills: `make-2d-video`, `new-video`, `render-video`, `video-sound`, `video-styles` and **`scriptforge`** (the "2D Niche Prompt" PDF turned into a skill)
 2. Everything owned by the studio lives beside `Install-2D-Studio.cmd` and `Launch-2D-Studio.cmd`: settings, YouTube credentials, projects, AI settings, skills, caches and the local Python environment. Keep this folder in a writable location.
@@ -20,7 +20,7 @@ A one-click setup and desktop app for making faceless, animated, stick-figure Yo
 | Claude | **Log in to Claude** | Existing Claude Code workflow and skills. |
 | OpenAI (Codex) | **Install OpenAI (Codex)**, then **Sign in: OpenAI (Codex)** | Codex CLI with its saved ChatGPT/API authentication. |
 | Gemini | **Install Gemini**, then **Sign in: Gemini** | Gemini CLI with its own Google/API authentication. |
-| OpenArt (AI video) | **Install OpenArt**, then **Sign in: OpenArt** (browser login, no API key) | Animation only. The official `openart` CLI generates one AI still per shot and optionally a short clip from it; the studio cuts the shots to the narration with FFmpeg. No GrowKaz kit or agent involved. |
+| OpenArt (AI video) | **Install OpenArt**, then **Sign in: OpenArt** (browser login, no API key) | Animation only. The official `openart` CLI generates one AI still per shot and optionally a short clip from it; the studio cuts the shots to the narration with FFmpeg. No animation kit or agent involved. |
 
 Models are optional: leave the field blank to use the CLI default. Provider and model selections are saved for the next run; each active job keeps the selections it started with. Voiceover, GPU rendering and YouTube upload use the same pipeline for every provider. CLI authentication is managed by the vendor; the app does not copy credentials into its settings.
 
@@ -28,9 +28,9 @@ All generated video content is **English only**, regardless of the language used
 
 Speech generation always uses **Microsoft Neural (Edge)** with an English voice; the default is `en-US-AndrewMultilingualNeural`, reading English narration. English US, UK and Australian voice options remain available. Saved Portuguese voices are replaced with the English default, and saved ElevenLabs engine selections reset to Microsoft. ElevenLabs is not offered in the voice-generation UI. Imported recordings are checked for English speech in the first 30 seconds using Whisper; uncertain or non-English recordings are rejected. Old unverified/non-English voice references are cleared from the current pipeline so Auto regenerates speech; the media files remain on disk. Restart the GUI after updating.
 
-Codex and Gemini receive the GrowKaz skill and reference paths explicitly, so animation does not depend on Claude Code being installed. Text tasks request text-only operation in read-only/plan mode. Animation uses Codex workspace-write or Gemini auto-edit; commands requiring extra permission can fail in headless mode. **Full auto** applies only to Claude/Gemini. Codex keeps its sandbox while the app handles rendering. Gemini trusts the current working folder for that invocation. Final publishing still requires the app's Publish action.
+Codex and Gemini receive the animation skill and reference paths explicitly, so animation does not depend on Claude Code being installed. Text tasks request text-only operation in read-only/plan mode. Animation uses Codex workspace-write or Gemini auto-edit; commands requiring extra permission can fail in headless mode. **Full auto** applies only to Claude/Gemini. Codex keeps its sandbox while the app handles rendering. Gemini trusts the current working folder for that invocation. Final publishing still requires the app's Publish action.
 
-The installer provisions the local GrowKaz skills under `.claude/skills` beside the launchers for all three providers. For manual updates, include `app/ai_providers.py` alongside `studio_gui.py`. Run adapter tests with `python -m unittest discover -s app -p test_ai_providers.py`. A missing login, unavailable model or exhausted quota is reported as an error; the app does not silently substitute another provider.
+The installer provisions the local animation skills under `.claude/skills` beside the launchers for all three providers. For manual updates, include `app/ai_providers.py` alongside `studio_gui.py`. Run adapter tests with `python -m unittest discover -s app -p test_ai_providers.py`. A missing login, unavailable model or exhausted quota is reported as an error; the app does not silently substitute another provider.
 
 You can run the installer again at any time. It skips anything already installed and never touches your `projects\` folder.
 
@@ -41,9 +41,9 @@ For a manual app update, copy the changed files from `app` into `.\app`, includi
 ## Using the app
 | Step | What it does |
 |---|---|
-| **① Script** | Pick a niche and a length (Shorts up to 12 min) to get 10 ideas from ScriptForge through your selected script provider. Pick one and you get the full script, alternative titles, tags, a description and thumbnail text. Type edit requests to revise it. |
+| **① Script** | Pick a niche and a length (Shorts up to 12 min) to get 10 ideas through your selected script provider. Pick one and you get the full script, alternative titles, tags, a description and thumbnail text. Type edit requests to revise it. |
 | **② Voiceover** | Uses English Microsoft Neural voices, including Andrew, Guy, Aria and Jenny, for every AI provider. You can also import a recording verified as English. |
-| **③ Animate** | Your selected animation agent runs the GrowKaz pipeline: Whisper timestamps, a shot plan, code-drawn 2D/3D scenes, music, sound effects and the final MP4. Long videos are built in several *parts*, one agent pass per section. **Suggest character styles** renders 4 character looks for you to choose from. **Open animation agent** lets you run it interactively instead. With **OpenArt (AI video)** selected, the studio instead splits the voiceover into shots of a few seconds, asks your script AI for an image and camera prompt per shot, generates them with the OpenArt CLI and cuts them to the narration (see below). |
+| **③ Animate** | Your selected animation agent runs the stick-figure animation pipeline: Whisper timestamps, a shot plan, code-drawn 2D/3D scenes, music, sound effects and the final MP4. Long videos are built in several *parts*, one agent pass per section. **Suggest character styles** renders 4 character looks for you to choose from. **Open animation agent** lets you run it interactively instead. With **OpenArt (AI video)** selected, the studio instead splits the voiceover into shots of a few seconds, asks your script AI for an image and camera prompt per shot, generates them with the OpenArt CLI and cuts them to the narration (see below). |
 | **④ Upload** | Makes a thumbnail from a video frame with big text on it, fills in the title, description and tags from the script, and uploads to YouTube (private, unlisted, public or scheduled). |
 
 ## OpenArt (AI-generated shots)
@@ -53,7 +53,7 @@ For a manual app update, copy the changed files from `app` into `.\app`, includi
 
 The setting is saved in the studio's `settings.json` as `openart_save_credits`. Turn the switch off in Setup to use custom shot lengths and AI clips. Compatible in-progress OpenArt projects retain their original shot length/motion mode to reuse paid media; the saving defaults apply to new projects. Scripts and shot prompts now request immediate hooks, concrete narrative beats, truthful titles and a complete payoff. These are creative directions, not a guarantee of audience retention or virality. Other animation providers and publishing behavior are unchanged.
 
-OpenArt is an alternative to the GrowKaz stick-figure pipeline for the **Animation** stage: photoreal or illustrated AI shots instead of code-drawn scenes. OpenArt has no public API key; its official programmatic route is the [OpenArt CLI](https://github.com/OpenArt-AI/cli), which signs in through your browser and spends your account's normal credits. Set it up once:
+OpenArt is an alternative to the stick-figure pipeline for the **Animation** stage: photoreal or illustrated AI shots instead of code-drawn scenes. OpenArt has no public API key; its official programmatic route is the [OpenArt CLI](https://github.com/OpenArt-AI/cli), which signs in through your browser and spends your account's normal credits. Set it up once:
 
 1. **Setup → Install OpenArt** downloads the release binary into the studio's `.tools` folder (nothing is added to your Windows PATH or profile). Then **Sign in: OpenArt** opens a console and your browser for the OAuth login; the credential is stored inside the studio (`.runtime\home\.openart`). **Check OpenArt account** shows your plan and credit balance.
 2. In **Setup** choose **OpenArt (AI video)** for *Animation & character designs*. Keep a text AI (Claude, Codex, Gemini API or Ollama) for *Ideas & script*: it also writes the shot prompts. The *Image model* and *Video model* boxes take OpenArt model ids (defaults `nano-banana-2` and `kling-3-omni`; `openart model list` and `openart model cost` show what your account offers and what it charges). The stage's Model box is not used.
@@ -72,7 +72,7 @@ Go to **Upload → YouTube setup** and follow the steps there. You create a free
 ## Troubleshooting
 - **Installer sits at "Downloading Chromium … 100%" and doesn't move.** Antivirus is blocking the unpack of `chrome.dll`. Press **Ctrl+C**, answer **N**, and let the installer finish. `app/patch_kit.py` (applied by the installer) makes the renderer use your installed **Chrome or Edge** instead, and the studio's doctor accepts that.
 - **faster-whisper / `av` fails to install.** Very new Pythons (3.14+) have no packages for it yet. The installer prefers Python 3.12, 3.11, 3.13 or 3.10 (installing 3.12 if none is present), saves the choice in `python.txt`, and the launcher uses it.
-- **Setup shows "GrowKaz studio kit: missing"** when the app is started from the repo folder: update to the latest version. Run the installer beside the launcher to provision the local studio kit.
+- **Setup shows "Animation kit: missing"** when the app is started from the repo folder: update to the latest version. Run the installer beside the launcher to provision the local studio kit.
 - **"Log in to Claude" opens a window that says the program isn't recognized**: fixed in the latest version. Update `app\studio_gui.py`.
 - **Claude says "Not logged in"**: use **Setup → Log in to Claude**, choose *Claude account with subscription*, and sign in in the browser.
 
@@ -104,4 +104,4 @@ Copyright (C) 2026 j0p3s
 
 This project is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 3. It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See [LICENSE](LICENSE) for the full text.
 
-The license covers the studio's own code (`app/` and the `.cmd` scripts). The GrowKaz Stickman kit (`GrowKaz_Stickman.plugin`, by GrowKaz) is third-party, is not included here and stays under its author's terms. Packages installed by the installer (for example edge-tts, piper-tts, faster-whisper) keep their own licenses.
+The license covers the studio's own code (`app/` and the `.cmd` scripts). The animation kit (`GrowKaz_Stickman.plugin`) is third-party, is not included here and stays under its author's terms. Packages installed by the installer (for example edge-tts, piper-tts, faster-whisper) keep their own licenses.

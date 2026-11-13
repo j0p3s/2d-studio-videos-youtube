@@ -240,13 +240,13 @@ def gemini_key_home(env):
 
 def run_agent(provider, prompt, run_cmd, *, cwd, env=None, animation=False,
               full_auto=False, model="", skill_dir=None, on_event=None):
-    if provider == OPENART:   # no agent and no GrowKaz kit: the studio builds the video itself
+    if provider == OPENART:   # no agent and no animation kit: the studio builds the video itself
         if animation:
             raise RuntimeError("OpenArt animation is started by the studio, not by run_agent.")
         raise RuntimeError("OpenArt generates images and video, not text. In Setup choose it only for "
                            "\"Animation & character designs\" and keep a text AI for \"Ideas & script\".")
     if animation and (not skill_dir or not (Path(skill_dir) / 'SKILL.md').is_file()):
-        raise RuntimeError("GrowKaz skill missing. Re-run the studio installer from Setup.")
+        raise RuntimeError("Animation skill missing. Re-run the studio installer from Setup.")
     if provider == OLLAMA:
         if animation:   # needs an agent: the studio runs the Claude Code CLI against Ollama instead
             raise RuntimeError("Ollama animation is started by the studio, not by run_agent.")

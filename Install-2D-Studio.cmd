@@ -7,9 +7,9 @@ color 0A
 rem ==========================================================================
 rem  2D Animation Studio installer
 rem  Installs: Git, Node.js LTS, Python 3.12, FFmpeg, Claude Code CLI,
-rem            GrowKaz Stickman Studio (three.js + Playwright Chromium),
+rem            animation studio kit (three.js + Playwright Chromium),
 rem            Python libs (numpy, scipy, faster-whisper, edge-tts, piper-tts, YouTube API,
-rem            customtkinter, pillow), the plugin skills + ScriptForge skill,
+rem            customtkinter, pillow), the plugin skills + script skill,
 rem            the Whisper speech model and a Piper voice (so timestamps and
 rem            voiceover work with no internet),
 rem            all studio settings beside this installer.
@@ -103,7 +103,7 @@ if not exist "%HOME2D%\.env" (
 )
 
 rem ---------- 4. Copy app + plugin --------------------------------------------
-call :banner "4/8  App, GrowKaz Stickman plugin and ScriptForge skill"
+call :banner "4/8  App, animation plugin and script skill"
 set "PLUG=%SRC%\plugin\GrowKaz_Stickman.plugin"
 if not exist "%PLUG%" set "PLUG=%USERPROFILE%\Downloads\GrowKaz_Stickman.plugin"
 if not exist "%PLUG%" (
@@ -131,7 +131,7 @@ rem let the renderer use installed Chrome/Edge when Playwright's Chromium downlo
 %PY% "%HOME2D%\app\patch_kit.py" "%STUDIO%"
 echo   [ok] studio kit  -^> %STUDIO%
 
-rem Local Claude Code skills (the plugin's 5 skills + ScriptForge)
+rem Local Claude Code skills (the plugin's 5 skills + the script skill)
 if not exist "%SKILLS%" mkdir "%SKILLS%"
 for %%S in (make-2d-video new-video render-video video-sound video-styles) do (
   robocopy "%EXT%\skills\%%S" "%SKILLS%\%%S" /E /NFL /NDL /NJH /NJS /NP >nul
