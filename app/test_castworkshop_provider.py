@@ -69,6 +69,18 @@ class CastWorkshopTests(unittest.TestCase):
         self.assertEqual(calls[1][1]['backend'], 'pread')
         self.assertNotIn('backend', calls[2][1])
 
+    def test_bootstrap_does_not_import_torch_before_comfy_configures_cuda(self):
+        path = Path(__file__).resolve().parents[1] / 'integrations/castworkshop/test-kit/comfy_bootstrap.py'
+        spec = importlib.util.spec_from_file_location('cast_bootstrap_lazy_test', path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        package = ModuleType('safetensors')
+        package.safe_open = lambda *args, **kwargs: kwargs
+        with patch.dict(sys.modules, {'safetensors': package, 'safetensors.torch': None}):
+            module.install_pread()
+            self.assertIsNone(sys.modules['safetensors.torch'])
+            self.assertEqual(package.safe_open('model', framework='pt')['backend'], 'pread')
+
     def test_remote_or_credentialed_endpoints_are_rejected(self):
         for url in ('https://localhost:8190', 'http://example.com', 'http://127.0.0.1.evil.test',
                     'http://user:pass@localhost:8190', 'http://localhost/other', 'http://localhost/?token=x'):

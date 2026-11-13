@@ -35,6 +35,66 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(self.target.read_bytes(), b'private previous data')
         self.assertTrue(self.source.exists())
 
+    def test_remaining_space_reuses_manually_copied_files(self):
+        folder = self.root / 'source'
+        folder.mkdir()
+        (folder / 'existing.bin').write_bytes(b'already copied')
+        (folder / 'missing.bin').write_bytes(b'new data')
+        destination = self.root / 'destination'
+        destination.mkdir()
+        (destination / 'existing.bin').write_bytes(b'already copied')
+        self.assertEqual(portable.additional_bytes(folder, destination), len(b'new data'))
+
+    def test_generated_tts_settings_cache_is_not_read_or_copied(self):
+        folder = self.root / 'original/tts_audio_suite/utils/audio'
+        folder.mkdir(parents=True)
+        cache = folder / '.inline_tag_settings_cache.json'
+        cache.write_text('generated settings')
+        (folder / 'required.py').write_text('required code')
+        target = self.root / 'destination'
+        original_open = Path.open
+
+        def guarded_open(path, *args, **kwargs):
+            if path == cache:
+                raise PermissionError('unreadable cache')
+            return original_open(path, *args, **kwargs)
+
+        with patch.object(portable, 'ROOT', self.root), patch.object(Path, 'open', guarded_open):
+            self.assertEqual(portable.additional_bytes(folder, target), len(b'required code'))
+            portable.copy_tree(folder, target)
+            portable.verify_tree(folder, target)
+        self.assertFalse((target / cache.name).exists())
+        self.assertTrue((target / 'required.py').exists())
+        self.assertFalse(portable.disposable(self.root / cache.name))
+
+    def test_required_file_permission_errors_still_stop_import(self):
+        folder = self.root / 'original'
+        folder.mkdir()
+        (folder / 'required.py').write_text('required code')
+        with patch.object(portable, 'digest', side_effect=PermissionError('required file denied')):
+            with self.assertRaises(PermissionError):
+                portable.copy_tree(folder, self.root / 'destination')
+
+    def test_cleanup_rejects_an_arbitrary_source_without_deleting(self):
+        with patch.object(portable.shutil, 'rmtree', side_effect=AssertionError('must not delete')):
+            with self.assertRaisesRegex(RuntimeError, 'restricted'):
+                portable.retire_source(self.root)
+
+    def test_verify_tree_blocks_missing_or_corrupt_files(self):
+        folder = self.root / 'original'
+        folder.mkdir()
+        (folder / 'file.bin').write_bytes(b'original')
+        destination = self.root / 'destination'
+        destination.mkdir()
+        with patch.object(portable, 'ROOT', self.root):
+            with self.assertRaisesRegex(RuntimeError, 'missing or different'):
+                portable.verify_tree(folder, destination)
+            (destination / 'file.bin').write_bytes(b'corrupt!')
+            with self.assertRaisesRegex(RuntimeError, 'missing or different'):
+                portable.verify_tree(folder, destination)
+            (destination / 'file.bin').write_bytes(b'original')
+            portable.verify_tree(folder, destination)
+
     def test_corrupted_copy_is_not_committed(self):
         def corrupt(source, target):
             target.write_bytes(b'corrupted')

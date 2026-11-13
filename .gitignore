@@ -53,3 +53,4 @@ pytorch_model*.bin
 /integrations/castworkshop/cache/
 /integrations/castworkshop/logs/
 /integrations/castworkshop/tmp/
+/integrations/castworkshop/source-backup/

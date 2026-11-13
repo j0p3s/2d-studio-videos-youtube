@@ -7,7 +7,6 @@ import sys
 
 def install_pread():
     import safetensors
-    import safetensors.torch
     original = safetensors.safe_open
 
     def safe_open(*args, **kwargs):
@@ -17,7 +16,11 @@ def install_pread():
         return original(*args, **kwargs)
 
     safetensors.safe_open = safe_open
-    safetensors.torch.safe_open = safe_open
+    # Do not import torch here: ComfyUI must configure its CUDA allocator first.
+    # Future safetensors.torch imports capture the patched package-level reader.
+    torch_module = sys.modules.get('safetensors.torch')
+    if torch_module is not None:
+        torch_module.safe_open = safe_open
 
 
 def main():

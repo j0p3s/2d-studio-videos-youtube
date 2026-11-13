@@ -27,10 +27,37 @@ a migration. Keep testing on D: until the user explicitly chooses to proceed.
    services, including Telegram when configured; it is never started by import/check.
 
 The import deliberately keeps the source installation intact. It uses additional space
-on C: rather than risking the only copy of a large download. You can remove D: manually
-after a successful real generation. Re-running import reuses identical verified files.
+on C: rather than risking the only copy of a large download. Re-running import reuses identical verified files.
 Do not change packages or project files during import. An existing different destination
 is preserved and reported for review, never silently overwritten.
+
+## Copying models by hand and retiring D:
+
+Close the importer with Ctrl+C before copying. In File Explorer, copy the contents of
+`D:\CastWorkshop-Test\ComfyUI\models` into this folder's `models\comfyui`, and the
+contents of `D:\CastWorkshop-Test\CastWorkshop\models` into `models\castworkshop`.
+Do not delete the originals. Run **Launch.cmd → 2** afterward: it verifies the copied
+files and finishes both applications, Python runtimes and FFmpeg. Copying virtual
+environments alone does not make them portable. The space check counts remaining
+files rather than requiring room for a second copy of models already present.
+Progress messages appear every 200 copied files and after each file of at least 1 GiB;
+checksum validation of a large existing file can still take time.
+The generated TTS Audio Suite `.inline_tag_settings_cache.json` and Python bytecode
+caches are skipped during import and source comparison. TTS uses its built-in defaults
+if this settings cache is absent. Permission errors on required files still stop import.
+
+After import finishes, restart Studio so its installation path refreshes, run option 3,
+and validate a real generation from the imported package. **Option 6** is an explicit
+cleanup command: it verifies application, dependency and model contents against the
+source, preserves test settings/logs/outputs under `source-backup`, runs runtime/model
+checks, and then deletes only `D:\CastWorkshop-Test`. It refuses incomplete imports,
+active processes, differing files or another source path. Download caches and temporary
+files are disposable and are not archived. Source cleanup never runs automatically
+when import or download finishes. Restart the menu after a launcher update.
+
+Studio supports this layout directly. Import updates its saved CastWorkshop path when
+it is empty or points to the old D: test folder. Ollama remains separate; check its
+model location before formatting D:. Other unrelated D: files are outside this check.
 
 ```text
 integrations/castworkshop/
@@ -47,6 +74,7 @@ integrations/castworkshop/
   bin/                   FFmpeg and FFprobe
   cache/                 Hugging Face, Torch and pip caches
   tmp/                   integration temporary files
+  source-backup/         private test settings, logs, outputs and source metadata
 ```
 
 The two application `models` paths are Windows directory junctions pointing into this
@@ -86,4 +114,5 @@ Advanced commands (from this folder):
 .\Launch.cmd import --source 'D:\CastWorkshop-Test'
 .\Launch.cmd health
 .\Launch.cmd comfy
+.\Launch.cmd retire-source
 ```

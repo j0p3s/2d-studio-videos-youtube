@@ -10,6 +10,16 @@ import sys
 
 ROOT = Path(__file__).resolve().parent
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+COPIED_FILES = 0
+
+
+def disposable(path):
+    # This upstream cache has built-in defaults and is regenerated on settings
+    # changes. Some installations give it an unreadable Windows ACL.
+    return path.name == '__pycache__' or (
+        path.name == '.inline_tag_settings_cache.json'
+        and tuple(path.parts[-4:-1]) == ('tts_audio_suite', 'utils', 'audio')
+    )
 
 
 def digest(path):
@@ -22,6 +32,7 @@ def digest(path):
 
 def copy_verified(source, target):
     """Never delete source data; keep an interrupted copy separate from a final file."""
+    global COPIED_FILES
     before = source.stat()
     expected = digest(source)
     if target.exists() and target.stat().st_size == before.st_size and digest(target) == expected:
@@ -37,12 +48,34 @@ def copy_verified(source, target):
     if digest(temporary) != expected:
         raise RuntimeError(f'Copy verification failed: {source.name}')
     temporary.replace(target)
+    COPIED_FILES += 1
+    if COPIED_FILES % 200 == 0 or before.st_size >= 1024**3:
+        print(f'Copied and verified {COPIED_FILES} files this run; latest: {source.name}', flush=True)
+
+
+def additional_bytes(source, target, *, ignored=()):
+    """Space for remaining copies, including files already copied by hand."""
+    if source.is_symlink() or source.is_junction():
+        raise RuntimeError(f'Source contains a link: {source}')
+    total = 0
+    for child in source.iterdir():
+        if child.name in ignored or disposable(child):
+            continue
+        destination = target / child.name
+        if child.is_symlink() or child.is_junction():
+            raise RuntimeError(f'Source contains a link: {child}')
+        if child.is_dir():
+            total += additional_bytes(child, destination)
+        elif child.is_file() and not destination.is_file():
+            total += child.stat().st_size
+    return total
 
 
 def active_processes(source):
-    env = dict(os.environ, CAST_SOURCE=str(source))
+    env = dict(os.environ, CAST_SOURCE=str(source), CAST_SKIP=f'{os.getpid()},{os.getppid()}')
     code = ("Get-CimInstance Win32_Process | Where-Object { "
             "$_.Name -match '^(python|pythonw|pip).*\\.exe$' -and $_.CommandLine -and "
+            "([string]$_.ProcessId) -notin ($env:CAST_SKIP -split ',') -and "
             "$_.CommandLine.IndexOf($env:CAST_SOURCE,[StringComparison]::OrdinalIgnoreCase) -ge 0 "
             "} | Select-Object -ExpandProperty ProcessId | ConvertTo-Json -Compress")
     result = subprocess.run(['powershell.exe', '-NoProfile', '-Command', code], env=env,
@@ -86,7 +119,7 @@ def copy_tree(source, target, *, ignored=()):
         raise RuntimeError(f'Source directory is a link; inspect it before packaging: {source}')
     target.mkdir(parents=True, exist_ok=True)
     for child in source.iterdir():
-        if child.name in ignored or child.name == '__pycache__':
+        if child.name in ignored or disposable(child):
             continue
         if child.is_symlink() or child.is_junction():
             raise RuntimeError(f'Source contains a link; inspect it before packaging: {child}')
@@ -140,11 +173,21 @@ def package(source):
     if partials or running or not torch_ready:
         raise RuntimeError('Finish downloads and dependency installation, then close source processes before importing.')
     verify_assets(source)
-    # Reserve space for the complete copy, including two isolated Python runtimes.
-    total = sum(p.stat().st_size for name in ('ComfyUI', 'CastWorkshop')
-                for p in (source / name).rglob('*') if p.is_file())
+    # A resumed/manual copy must not require space for another complete model set.
+    total = 0
+    for app, name in (('ComfyUI', 'comfy'), ('CastWorkshop', 'cast')):
+        app_source = source / app
+        cfg = dict(line.split(' = ', 1) for line in (app_source / '.venv/pyvenv.cfg').read_text().splitlines()
+                   if ' = ' in line)
+        total += additional_bytes(Path(cfg['home']), python_path(name).parent,
+                                  ignored=('Scripts', 'Doc', 'include', 'libs', 'Lib'))
+        total += additional_bytes(Path(cfg['home']) / 'Lib', python_path(name).parent / 'Lib', ignored=('site-packages',))
+        total += additional_bytes(app_source / '.venv/Lib/site-packages', python_path(name).parent / 'Lib/site-packages')
+        total += additional_bytes(app_source, ROOT / 'apps' / app, ignored=('.git', '.venv', 'models'))
+        total += additional_bytes(app_source / 'models', ROOT / 'models' / ('comfyui' if name == 'comfy' else 'castworkshop'))
+    print(f'Remaining copy space estimate: {total / 1024**3:.2f} GiB plus 2 GiB reserve.', flush=True)
     if shutil.disk_usage(ROOT).free < total + 2 * 1024**3:
-        raise RuntimeError('Not enough free space for a verified portable copy plus 2 GB reserve.')
+        raise RuntimeError('Not enough free space for the remaining portable copy plus 2 GB reserve.')
     for app, name in (('ComfyUI', 'comfy'), ('CastWorkshop', 'cast')):
         app_source = source / app
         cfg = dict(line.split(' = ', 1) for line in (app_source / '.venv/pyvenv.cfg').read_text().splitlines()
@@ -179,6 +222,7 @@ def package(source):
             copy_verified(dll, ROOT / 'bin' / dll.name)
     health()
     (ROOT / 'runtime/ready.json').write_text(json.dumps({'source': str(source), 'verified': True}), encoding='utf-8')
+    use_in_studio()
     print('Portable copy created. Source on D: is unchanged. Validate a real test before removing it.')
 
 
@@ -192,6 +236,86 @@ def health():
         subprocess.run([str(ROOT / 'bin' / (tool + '.exe')), '-version'], env=env,
                        stdout=subprocess.DEVNULL, check=True)
     print('Python and FFmpeg smoke checks passed. This does not certify all custom nodes or generation.')
+
+
+def verify_tree(source, target, *, ignored=()):
+    """Compare every retained source file; never follow external directory links."""
+    if source.is_symlink() or source.is_junction():
+        raise RuntimeError(f'Source contains a link: {source}')
+    for child in source.iterdir():
+        if child.name in ignored or disposable(child):
+            continue
+        destination = target / child.name
+        if child.is_symlink() or child.is_junction():
+            raise RuntimeError(f'Source contains a link: {child}')
+        destination.resolve().relative_to(ROOT.resolve())
+        if child.is_dir():
+            verify_tree(child, destination)
+        elif child.is_file():
+            if not destination.is_file() or child.stat().st_size != destination.stat().st_size or digest(child) != digest(destination):
+                raise RuntimeError(f'Portable file missing or different: {destination}')
+
+
+def use_in_studio():
+    path = ROOT.parents[1] / 'settings.json'
+    if not path.is_file():
+        return
+    settings = json.loads(path.read_text(encoding='utf-8'))
+    previous = settings.get('castworkshop_root')
+    if not previous or Path(previous).resolve() == Path('D:/CastWorkshop-Test').resolve():
+        backup = ROOT / 'source-backup/studio-settings-before-migration.json'
+        if not backup.exists():
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, backup)
+        settings['castworkshop_root'] = str(ROOT)
+        temporary = path.with_suffix('.migration.tmp')
+        temporary.write_text(json.dumps(settings, indent=2), encoding='utf-8')
+        temporary.replace(path)
+        print('Studio CastWorkshop installation path updated. Restart Studio to reload it.')
+
+
+def retire_source(source):
+    """Explicit cleanup action: verify the portable copy before removing this exact source."""
+    allowed = Path('D:/CastWorkshop-Test')
+    if source.is_symlink() or source.is_junction() or source.resolve() != allowed.resolve():
+        raise RuntimeError('Cleanup is restricted to the real D:\\CastWorkshop-Test directory.')
+    source = source.resolve()
+    if ROOT.resolve().drive.lower() == source.drive.lower():
+        raise RuntimeError('Portable package must be outside D: before source cleanup.')
+    if not (ROOT / 'runtime/ready.json').is_file():
+        raise RuntimeError('Import has not completed. Finish option 2 before cleanup.')
+    if active_processes(source) or active_processes(ROOT):
+        raise RuntimeError('Close application, installer and importer processes before cleanup.')
+    for app, name in (('ComfyUI', 'comfy'), ('CastWorkshop', 'cast')):
+        print(f'Verifying every {app} application, dependency and model file...', flush=True)
+        verify_tree(source / app, ROOT / 'apps' / app, ignored=('.git', '.venv', 'models'))
+        verify_tree(source / app / '.venv/Lib/site-packages', python_path(name).parent / 'Lib/site-packages')
+        verify_tree(source / app / 'models', ROOT / 'models' / ('comfyui' if name == 'comfy' else 'castworkshop'))
+        junction(ROOT / 'apps' / app / 'models', ROOT / 'models' / ('comfyui' if name == 'comfy' else 'castworkshop'))
+        # Retain source-control metadata separately without adding it to the runtime.
+        if (source / app / '.git').exists():
+            copy_tree(source / app / '.git', ROOT / 'source-backup' / app / '.git')
+    archive = ROOT / 'source-backup/test-folder'
+    ignored = ('ComfyUI', 'CastWorkshop', 'pip-cache', 'tmp')
+    copy_tree(source, archive, ignored=ignored)
+    verify_tree(source, archive, ignored=ignored)
+    verify_assets(ROOT / 'apps')
+    health()
+    use_in_studio()
+    if active_processes(source) or active_processes(ROOT):
+        raise RuntimeError('An application started during verification; source was preserved.')
+    # Revalidate the literal path immediately before recursive deletion. rmtree does
+    # not traverse junction targets on supported Windows Python versions.
+    if source != allowed.resolve() or source.is_junction() or source.is_symlink():
+        raise RuntimeError('Source path changed; cleanup refused.')
+    report = ROOT / 'runtime/source-cleanup.json'
+    report.write_text(json.dumps({'source': str(source), 'verified': True,
+                                 'backup': str(archive), 'deleted': False}, indent=2), encoding='utf-8')
+    shutil.rmtree(source)
+    record = json.loads(report.read_text(encoding='utf-8'))
+    record['deleted'] = not source.exists()
+    report.write_text(json.dumps(record, indent=2), encoding='utf-8')
+    print('Verified portable files and removed D:\\CastWorkshop-Test. Test outputs/settings are in source-backup.')
 
 
 def launch(app):
@@ -209,14 +333,15 @@ def launch(app):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', nargs='?', choices=('check', 'import', 'health', 'comfy', 'cast'))
+    parser.add_argument('action', nargs='?', choices=('check', 'import', 'health', 'comfy', 'cast', 'retire-source'))
     parser.add_argument('--source', type=Path, default=Path('D:/CastWorkshop-Test'))
     args = parser.parse_args()
     action = args.action
     if action is None:
         print('1. Check D: downloads/setup\n2. Import portable package (keeps D: original)\n'
-              '3. Check portable runtime\n4. Start ComfyUI\n5. Start CastWorkshop (configured Telegram services)')
-        action = {'1': 'check', '2': 'import', '3': 'health', '4': 'comfy', '5': 'cast'}.get(input('Choose: ').strip())
+              '3. Check portable runtime\n4. Start ComfyUI\n5. Start CastWorkshop (configured Telegram services)\n'
+              '6. Verify portable copy, back up test outputs/settings, then DELETE D:\\CastWorkshop-Test')
+        action = {'1': 'check', '2': 'import', '3': 'health', '4': 'comfy', '5': 'cast', '6': 'retire-source'}.get(input('Choose: ').strip())
         if action is None:
             return 0
     if action == 'check':
@@ -225,6 +350,8 @@ def main():
         package(args.source.resolve())
     elif action == 'health':
         health()
+    elif action == 'retire-source':
+        retire_source(args.source)
     else:
         return launch('ComfyUI' if action == 'comfy' else 'CastWorkshop')
     return 0

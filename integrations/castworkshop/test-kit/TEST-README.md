@@ -53,3 +53,13 @@ later portable migration. Dependencies and models must finish before a full test
 
 Model folders and common weight files are ignored by the Studio repository; this kit
 contains only source/configuration. Do not copy models or private runtime files into Git.
+# Jobs lost after a restart
+
+The launcher checks saved job IDs against both ComfyUI history and its running/pending
+queue. After three successful checks find a job absent, it checks history again,
+backs up the saved state as `*-state-lost-*.json`, and submits one replacement only
+when the queue is idle. It preserves completed image/voice files. A busy queue,
+unreachable server, or uncertain submission does not trigger a replacement. If the
+replacement also disappears, the launcher stops with an error instead of looping.
+Close an older launcher before reopening `Launch-Test.cmd`; existing processes keep
+their loaded Python code until restarted.

@@ -188,7 +188,7 @@ def save_state(path, data):
     temporary.replace(path)
 
 
-def stage(name, workflow, save_id, folder):
+def stage(name, workflow, save_id, folder, recover_missing=True):
     state_path = folder / (name + '-state.json')
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
     if state.get('artifact') and Path(state['artifact']).is_file():
@@ -221,6 +221,7 @@ def stage(name, workflow, save_id, folder):
     prompt_id = state['prompt_id']
     print(f'{name}: job {prompt_id}. Rendering may take a long time.', flush=True)
     deadline, update, failed_reads = time.monotonic() + 7200, 0, 0
+    missing_reads = 0
     while time.monotonic() < deadline:
         if SERVER_PROCESS is not None and SERVER_PROCESS.poll() is not None:
             state['server_exit_code'] = SERVER_PROCESS.returncode
@@ -229,6 +230,7 @@ def stage(name, workflow, save_id, folder):
                                'The job ID is preserved. Read logs/comfy-server.log before retrying.')
         try:
             history = api('/history/' + prompt_id)
+            queue = api('/queue') if prompt_id not in history else {}
         except (OSError, ValueError):
             failed_reads += 1
             if failed_reads >= 6:
@@ -238,6 +240,23 @@ def stage(name, workflow, save_id, folder):
             time.sleep(5)
             continue
         failed_reads = 0
+        if prompt_id not in history:
+            queued = queue.get('queue_running', []) + queue.get('queue_pending', [])
+            present = any(len(item) > 1 and item[1] == prompt_id for item in queued)
+            missing_reads = 0 if present else missing_reads + 1
+            if missing_reads >= 3:
+                # Check history again: the job may finish between the two GETs.
+                if prompt_id in api('/history/' + prompt_id):
+                    continue
+                if queued or not recover_missing:
+                    raise RuntimeError(f'{name}: saved job {prompt_id} is missing from queue/history. '
+                                       'No replacement was submitted; inspect ComfyUI before retrying.')
+                backup = folder / (name + '-state-lost-' + uuid.uuid4().hex + '.json')
+                shutil.copy2(state_path, backup)
+                save_state(state_path, {'recovered_missing_prompt_id': prompt_id})
+                print(f'{name}: saved job {prompt_id} was lost after a restart or history reset. '
+                      f'Queue is idle; state backed up to {backup.name}. Submitting one replacement.', flush=True)
+                return stage(name, workflow, save_id, folder, recover_missing=False)
         if prompt_id in history:
             entry = history[prompt_id]
             save_state(folder / (name + '-history.json'), entry)
@@ -258,7 +277,7 @@ def stage(name, workflow, save_id, folder):
             api('/free', {'unload_models': True, 'free_memory': True})
             return target
         if time.monotonic() >= update:
-            print(f'{name}: waiting for GPU job; see logs/comfy-server.log.', flush=True)
+            print(f'{name}: checking saved job in queue/history; see logs/comfy-server.log.', flush=True)
             update = time.monotonic() + 30
         time.sleep(5)
     raise RuntimeError(f'{name} timed out. Saved job ID {prompt_id}; it will not be resubmitted.')

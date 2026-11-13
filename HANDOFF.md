@@ -14,12 +14,43 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
   partial safetensors/GGUF downloads, portable runtimes, caches, logs and media. No model
   folders or weights were tracked at the latest index check. Never print keys/tokens or
   commit credentials, private settings, third-party application trees or model weights.
-- The user explicitly requires **testing on D: before migration**. No real models or
-  runtime installations have been moved or copied to Studio, and no automatic migration
-  is scheduled. The optional importer is manual, preserves D:, checks download/process
-  readiness and verifies copied data. It is not yet validated by a complete real import.
+- The user has now authorized portable migration and eventual deletion of
+  `D:\CastWorkshop-Test`, because they plan to format D:. Import/manual copying is in
+  progress, not complete. Never infer that the destination is ready from copied models
+  alone. Preserve the source until import and validation succeed; deletion is an explicit
+  option, never triggered automatically by download/import completion.
 
 ## CastWorkshop integration and current test
+
+- Portable migration update (2026-11-13): local import was interrupted/incomplete;
+  no `integrations/castworkshop/runtime/ready.json` was present at the latest check.
+  No source deletion has been performed. Launch.cmd avoids incomplete bundled Python
+  until the ready marker exists. Manual model copies are supported; import estimates
+  remaining copy space and prints progress. Explicit menu option 6 verifies retained
+  application/dependency/model files, archives test outputs/settings under ignored
+  `source-backup/`, checks runtimes and then deletes only the real D: test folder.
+  Run a real generation from C: before choosing cleanup or formatting D:.
+  Import updates an empty/old-D: Studio installation setting; restart Studio afterward.
+- Latest import stopped after 28,000 verified copies on an unreadable generated cache:
+  `ComfyUI/custom_nodes/tts_audio_suite/utils/audio/.inline_tag_settings_cache.json`.
+  The importer now skips precisely this upstream disposable cache and `__pycache__`
+  during space estimates, copy and source comparison. Upstream uses built-in defaults
+  when the cache is absent. Required-file permission errors still stop the import.
+  The source files were not deleted or permissions changed. Reopen Launch.cmd and
+  choose option 2; identical verified destination files are reused.
+- Manual copying: put the contents of D: `ComfyUI/models` in integration
+  `models/comfyui`, and D: `CastWorkshop/models` in `models/castworkshop`. Close the
+  importer first; do not run simultaneous copies. Option 2 still finishes code,
+  dependencies, isolated Python runtimes and FFmpeg/FFprobe. The last user-reported
+  remaining-space estimate was 3.91 GiB plus a 2 GiB reserve, not a completion marker.
+  Progress prints every 200 copied files and after individual files of at least 1 GiB.
+- Before source removal: complete option 2, run option 3, restart Studio, validate a
+  real generation using the imported C: installation, then close Studio/ComfyUI and
+  use option 6. It archives test settings/logs/media and source-control metadata in
+  ignored `source-backup/`; download caches/temp data are disposable. Its destructive
+  path has not been exercised against the real source. No claim that D: is safe to
+  format; unrelated D: data is outside this migration check. Ollama's default model
+  folder was observed on C: with no OLLAMA_MODELS override; its API was not responding.
 
 - Studio offers **CastWorkshop (local)** as an animation-only provider, with editable
   installation root/local URL and check/setup actions. Use `D:\CastWorkshop-Test` and
@@ -50,14 +81,25 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
   D: `logs/update-backups/`; reference media and models are preserved. The user was told
   they can deliberately retry with `Launch-Test.cmd --skip-setup`. Do not auto-submit
   another concurrent test. Do not claim a complete video until actual final validation.
-- Completed media and job IDs survive restarts. Ambiguous submissions are not blindly
-  resubmitted; queues and upstream GPU locks are checked. Stop can leave an accepted job
+- Completed media and saved job IDs survive launcher restarts; ComfyUI history itself
+  may be lost on server restart. The standalone launcher checks both history and queue,
+  then rechecks history after three missing observations. With an idle queue it backs up
+  the old state as `*-state-lost-*.json` and submits at most one replacement per stage
+  invocation. Busy queues, unreachable servers and uncertain submissions do not trigger
+  replacements. This recovery is covered by three offline regression tests.
+  Ambiguous submissions are not blindly resubmitted; queues and upstream GPU locks are checked. Stop can leave an accepted job
   running. Changed generation inputs require a fresh Studio project to preserve jobs.
 - Follow-up log: MOSS voice succeeded (29.78s); H3 server exited with 0xC0000005 in
   safetensors/PyTorch mapped encoder loading. The full encoder SHA256 matches the pinned
   manifest. Added source/test-folder `comfy_bootstrap.py` to select the installed `pread`
   backend without editing ComfyUI. Isolated loading of all 2,054 encoder tensors passed.
   Full video generation is still unverified. Preserve completed reference.png and voice.flac.
+- Bootstrap initialization was also corrected to avoid importing torch before ComfyUI
+  configures the CUDA allocator. A subsequent real H3 job loaded the text encoder and
+  both VAEs and reached 0/20 sampling. The user stopped/restarted an earlier run; a later
+  replacement job `c17d4f37-1a47-43e5-bd48-9225545f40df` was observed active at 0/20.
+  No final MP4 or measured total render time has been verified. Do not restart generation
+  merely to update documentation or finish file import.
 - Upstream checkout `24a9462` and the linked setup/model/performance/voice documentation
   informed this adapter. No third-party code or weights are bundled in the source commit.
   Studio GUI initialized with isolated settings; screenshot capture timed out, so no visual
@@ -165,8 +207,12 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
 
 ## Validation and remaining limits
 
-- Latest automated results: **148 Python tests and 16 Node tests pass**, plus nine standalone
-  D: launcher tests, plus clean Python syntax and Git whitespace checks. Run the commands
+- Last full-suite baseline: **149 Python tests and 16 Node tests passed** before the
+  latest portable-import additions. Latest targeted portable suite: **13/13 pass**,
+  including cache skipping, required-file permission failures, partial/manual-copy
+  space estimates and deletion-path rejection. Provider suite: **14/14 pass**;
+  standalone launcher suites: **9 existing + 3 recovery tests pass**. Git whitespace
+  checks passed. These targeted counts are not a fresh full-suite total. Run the commands
   in [README](README.md#validation) from the checkout root.
 - Real approved-project audit: **1,624 frames, 120 snapshots, 15 shots**, zero runtime failures
   or visual flags. A synthetic error on frame 11, outside snapshot times, was detected.
