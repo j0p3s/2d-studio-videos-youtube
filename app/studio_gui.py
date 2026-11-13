@@ -246,6 +246,21 @@ def open_path(p):
 
 
 # ----------------------------------------------------------------------------- app
+def centered_geometry(width, height, screen_w, screen_h, scaling=1.0, frame_w=0, frame_h=0):
+    """Tk geometry string that puts a width x height window (logical size) in the middle of the screen.
+
+    CustomTkinter scales the size by the DPI factor but not the +x+y offset, so the offset is
+    computed from the scaled pixel size. frame_w / frame_h are the pixels the title bar and borders
+    add around the client area, so the whole framed window is centered. The window is shrunk to
+    fit small screens.
+    """
+    width = max(1, min(width, int((screen_w - 40 - frame_w) / scaling)))
+    height = max(1, min(height, int((screen_h - 80 - frame_h) / scaling)))
+    x = max(0, (screen_w - round(width * scaling) - frame_w) // 2)
+    y = max(0, (screen_h - round(height * scaling) - frame_h) // 2)
+    return f"{width}x{height}+{x}+{y}"
+
+
 class Studio(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -253,7 +268,11 @@ class Studio(ctk.CTk):
         ctk.set_default_color_theme("green")
         readable_theme()
         self.title("2D Animation Studio")
-        self.geometry("1280x820")
+        # Start in the middle of the screen. The first guess uses typical Windows frame sizes;
+        # once the window is shown, _recenter corrects it with the real title bar and border sizes.
+        self.geometry(centered_geometry(1280, 820, self.winfo_screenwidth(), self.winfo_screenheight(),
+                                        self._get_window_scaling(), 16, 39))
+        self.after(150, self._recenter)
         self.minsize(1200, 720)
         self.configure(fg_color="#0b0d10")
 
@@ -296,6 +315,20 @@ class Studio(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ------------------------------------------------------------------ layout
+    def _recenter(self):
+        """Center the framed window using its real title bar and border sizes (runs once at start)."""
+        try:
+            self.update_idletasks()
+            border = max(0, self.winfo_rootx() - self.winfo_x())
+            title = max(0, self.winfo_rooty() - self.winfo_y())
+            w, h = self.winfo_width() + 2 * border, self.winfo_height() + title + border
+            x = max(0, (self.winfo_screenwidth() - w) // 2)
+            y = max(0, (self.winfo_screenheight() - h) // 2)
+            if (x, y) != (self.winfo_x(), self.winfo_y()):
+                self.geometry(f"+{x}+{y}")
+        except Exception as exc:  # cosmetic only: never block start-up
+            session_log.write("INFO", f"Could not center the window: {exc}")
+
     def _build_sidebar(self):
         sb = ctk.CTkFrame(self, width=230, corner_radius=0, fg_color=SIDEBAR_BG)
         sb.grid(row=0, column=0, rowspan=2, sticky="nsw")
