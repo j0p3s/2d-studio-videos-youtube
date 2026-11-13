@@ -3,6 +3,8 @@
 python app/check_offline_scenes.py --all --repair
 python app/check_offline_scenes.py --project projects/my-video --repair --export
 No cloud calls. Existing manual/approved scenes are audited but never auto-rewritten.
+Each CLI run rebuilds reports/offline-animations/{.index.html,index.html}; --report-dir
+overrides that folder. The Windows launcher also offers to open the completed report.
 """
 import argparse
 import hashlib
@@ -152,39 +154,75 @@ def main():
     parser.add_argument('--repair', action='store_true', help='Use local Ollama for flagged scenes')
     parser.add_argument('--export', action='store_true', help='Rerender/mix after repairs')
     parser.add_argument('--model', default='')
+    parser.add_argument('--report-dir', type=Path, help='HTML report folder (default: reports/offline-animations beside the studio)')
     args = parser.parse_args()
     studio = args.studio.resolve(); root = studio.parent
-    env = local_environment(root); load_env_file(root / '.env', env)
-    projects = sorted(p.parent.parent for p in (studio / 'projects').glob('*/build/local_animation.json')
-                      if not p.parent.parent.name.startswith('_')) if args.all else [args.project if args.project.is_absolute() else studio / args.project]
-    python = root / '.venv/Scripts/python.exe'
-    if not python.exists():
-        import sys
-        python = Path(sys.executable)
-    def run(cmd):
-        result = subprocess.run(cmd, cwd=studio, env=env, capture_output=True, text=True,
-                                encoding='utf-8', errors='replace', creationflags=0x08000000 if __import__('os').name == 'nt' else 0)
-        return result.returncode, result.stdout + result.stderr
-    failed = []
-    for project in projects:
-        project = project.resolve()
-        if project.parent != studio / 'projects':
-            raise ValueError('Project must be directly under the studio projects folder')
-        print('Checking ' + project.name, flush=True)
-        try:
-            model = args.model
-            metrics_file = project / 'build/ollama_performance.json'
-            if not model and metrics_file.exists():
-                model = json.loads(metrics_file.read_text(encoding='utf-8')).get('model', '')
-            local = LocalAnimation(studio, project.name, python, run, env, model, lambda: None, print)
-            check_project(local.host, request=local.request if args.repair else None)
-            if args.export:
-                import ollama_provider
-                ollama_provider.release_model(model, env)
-                story = json.loads((project / 'story/shots.json').read_text(encoding='utf-8'))
-                local.host.export(float(story['duration']))
-        except (RuntimeError, OSError, ValueError) as exc:
-            failed.append(project.name); print(str(exc), flush=True)
+    from offline_report import write_report
+    folder = args.report_dir or root / 'reports/offline-animations'
+    started = time.time_ns()
+    records, fatal = [], None
+    write_report(folder, records, started=started, repair=args.repair, export=args.export)
+    try:
+        if not studio.is_dir() or not (studio / 'projects').is_dir():
+            raise RuntimeError('Studio projects folder not found: ' + str(studio / 'projects'))
+        env = local_environment(root); load_env_file(root / '.env', env)
+        projects = sorted(p.parent.parent for p in (studio / 'projects').glob('*/build/local_animation.json')
+                          if not p.parent.parent.name.startswith('_')) if args.all else [args.project if args.project.is_absolute() else studio / args.project]
+        python = root / '.venv/Scripts/python.exe'
+        if not python.exists():
+            import sys
+            python = Path(sys.executable)
+        def run(cmd):
+            result = subprocess.run(cmd, cwd=studio, env=env, capture_output=True, text=True,
+                                    encoding='utf-8', errors='replace', creationflags=0x08000000 if __import__('os').name == 'nt' else 0)
+            return result.returncode, result.stdout + result.stderr
+        for project in projects:
+            project = project.resolve()
+            record = {'name': project.name, 'path': str(project), 'status': 'checking', 'audit': None}
+            records.append(record)
+            write_report(folder, records, started=started, repair=args.repair, export=args.export)
+            project_started = time.time_ns()
+            print('Checking ' + project.name, flush=True)
+            try:
+                if project.parent != studio / 'projects':
+                    raise ValueError('Project must be directly under the studio projects folder')
+                model = args.model
+                metrics_file = project / 'build/ollama_performance.json'
+                if not model and metrics_file.exists():
+                    model = json.loads(metrics_file.read_text(encoding='utf-8')).get('model', '')
+                local = LocalAnimation(studio, project.name, python, run, env, model, lambda: None, print)
+                record['audit'] = check_project(local.host, request=local.request if args.repair else None)
+                if args.export:
+                    import ollama_provider
+                    ollama_provider.release_model(model, env)
+                    story = json.loads((project / 'story/shots.json').read_text(encoding='utf-8'))
+                    local.host.export(float(story['duration']))
+                record['status'] = 'complete'
+            except Exception as exc:
+                record.update(status='failed', error=str(exc))
+                # check_project can save its current findings and then stop for review.
+                # Never present an older successful audit as results from a failed new run.
+                current_report = project / 'build/scene_audit/report.json'
+                if record['audit'] is None:
+                    try:
+                        if current_report.stat().st_mtime_ns >= project_started:
+                            record['audit'] = json.loads(current_report.read_text(encoding='utf-8'))
+                    except (OSError, ValueError):
+                        pass
+                print(str(exc), flush=True)
+    except KeyboardInterrupt:
+        fatal = 'The check was cancelled. Some projects may not have been checked.'
+        if records and records[-1]['status'] == 'checking':
+            records[-1].update(status='cancelled', error=fatal)
+    except Exception as exc:
+        fatal = str(exc)
+    finally:
+        entry = write_report(folder, records, started=started, finished=True, error=fatal,
+                             repair=args.repair, export=args.export)
+        print('HTML REPORT: ' + str(entry), flush=True)
+    if fatal:
+        raise SystemExit(fatal)
+    failed = [r['name'] for r in records if r['status'] == 'failed']
     if failed:
         raise SystemExit('Failed projects: ' + ', '.join(failed))
 

@@ -156,6 +156,15 @@ For existing offline projects, double-click `Check-Offline-Animations.cmd`, or r
 .\.venv\Scripts\python.exe app\check_offline_scenes.py --project projects/my-video --repair --export
 ```
 
+Each launcher/CLI run rebuilds `reports/offline-animations/.index.html` and the matching
+`index.html`. The HTML dashboard explains pass/review/failure states, repair decisions and
+errors, and includes expandable scene previews copied into its local `assets` folder.
+The Windows launcher asks **Open the HTML report? [Y/N]** after checking. It replaces stale
+results even if Python cannot start; a new failed check does not show an older success as
+current. The report is a snapshot of the latest run, rebuilt when you run the checker again.
+Use `--report-dir PATH` with the direct Python command to select another report folder;
+the launcher keeps its report beside itself. Generated dashboards/previews are gitignored.
+
 `--all` includes projects with a `build/local_animation.json` checkpoint; underscore-prefixed
 test projects are excluded. Without `--repair` the command only audits. `--export` explicitly
 rerenders and remixes the final video; repairs alone do not change an already exported MP4.
@@ -177,7 +186,7 @@ node --test app\video_encoder.test.mjs app\offline_motion.test.mjs
 git diff --check
 ```
 
-Latest validation: **115 Python tests and 6 Node tests pass**. A real approved-project audit checked 1,624 frames and 120 snapshots with no runtime failures or visual flags. Tests include stalled-stream cancellation, repair rollback/thresholds, approved-scene protection and early failure reporting. These checks do not guarantee visual quality for every new generation.
+Latest validation: **121 Python tests and 6 Node tests pass**. A real approved-project audit checked 1,624 frames and 120 snapshots with no runtime failures or visual flags. Tests include stalled-stream cancellation, repair rollback/thresholds, approved-scene protection, early failure reporting and HTML report regeneration/error handling. These checks do not guarantee visual quality for every new generation.
 
 ## License
 

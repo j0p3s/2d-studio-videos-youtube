@@ -95,6 +95,18 @@ Direct commands allow audit-only mode and explicit export:
   model is used, falling back to the adapter/environment default.
 - `--studio PATH` selects another installed kit. Explicit projects must be directly inside
   that studio's `projects` folder.
+- `--report-dir PATH` selects the combined HTML dashboard folder for direct Python runs.
+  By default it is `reports/offline-animations` beside the studio. The Windows launcher
+  always uses that folder beside its own root and asks whether to open `.index.html`.
+
+The HTML dashboard is rebuilt on every launcher/CLI run, including failures and cancellations.
+Both `.index.html` and `index.html` contain the same report. It summarizes projects/scenes,
+warnings, runtime failures and repair decisions, and copies allowed scene preview images
+under `assets` so the HTML can be viewed locally without network assets. Earlier successful
+audit JSON is not presented as the result of a failed new check. The launcher also replaces
+the old entry pages with an explanatory fallback before starting Python. Opening an HTML
+file alone shows the latest snapshot; rerun the launcher to perform new checks/rebuild it.
+Generated root `reports/` content is private runtime output and is gitignored.
 
 ## Files and diagnostics
 
@@ -107,6 +119,7 @@ Direct commands allow audit-only mode and explicit export:
 | `build/scene_audit/*.png` | Up to eight snapshots per shot; runtime checks also cover frames between snapshots. |
 | `build/sheets/`, `build/stills/` | Renderer contact sheets and other requested stills. |
 | `out/final.mp4` | App-owned final export. |
+| `reports/offline-animations/.index.html` (root) | Rebuilt combined HTML dashboard; `index.html` is an identical entry point. |
 | `studio.log`, `gui_error.log` | Current session operations and GUI errors; the session log resets at launch. |
 
 On failure, inspect the reported stage and last error. A failed setup/alignment/plan now
@@ -159,7 +172,7 @@ node --test app\video_encoder.test.mjs app\offline_motion.test.mjs
 git diff --check
 ```
 
-Latest verified results: 115 Python tests and 6 Node tests pass. Stalled-header/token tests
+Latest verified results: 121 Python tests and 6 Node tests pass. Stalled-header/token tests
 verify cancellation under 1.5 seconds in the local test server. A synthetic frame-11 error
 outside snapshot times was detected by the full-frame audit. A real approved-video audit
 checked 1,624 frames and 120 snapshots without runtime failures or visual flags. These are

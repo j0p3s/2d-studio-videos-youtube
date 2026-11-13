@@ -5,6 +5,18 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
 
 ## Project and publication
 
+- Latest feature (included in this GitHub update): `Check-Offline-Animations.cmd` rebuilds a combined HTML dashboard
+  each run and asks **Open the HTML report? [Y/N]**. New module `app/offline_report.py`
+  writes identical `reports/offline-animations/.index.html` and `index.html`, with project/
+  scene states, repairs/errors and expandable copied previews. Direct CLI supports
+  `--report-dir`; launcher pins the folder beside itself. Failures/cancellation/empty runs
+  replace old results; failed checks do not substitute stale successful audit data. A fallback
+  entry page is written by the launcher even if Python cannot start. The dashboard uses no
+  external assets; untrusted text is escaped and previews must resolve within the project's
+  audit folder. Root `reports/` is now gitignored. Opening HTML alone shows a snapshot;
+  running the launcher performs new checks and rebuilds it. The user explicitly authorized
+  publishing this feature and its updated documentation directly to `main`. Generated HTML,
+  report assets, private settings and videos remain excluded from the source commit.
 - Checkout: `C:\Users\Joao\Desktop\2D-Animation-Studio-Setup`.
 - Repository: https://github.com/j0p3s/2d-studio-videos-youtube, branch `main`.
 - User explicitly requested the folder, GitHub and all documentation be updated with the
@@ -12,8 +24,9 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
   merge is required when the commit is pushed directly. Use `git log`/remote refs for the
   current commit ID instead of assuming this document's own commit hash.
 - Prior published commits: `8a270d0` added offline generation/auditing; `6eccb5a` recorded that
-  publication. The current update adds stricter acceptance, cancellation, cache protection,
-  full-frame checking, early failure reporting and consolidated documentation.
+  publication; `2a07820` published stricter acceptance, cancellation, cache protection,
+  full-frame checks, early failure reporting and consolidated documentation. The current
+  update adds the rebuilt HTML dashboard, open-report prompt and report regression tests.
 - Only source, tests, launchers and documentation belong in Git. Keep `.env`, credentials,
   logs, private settings, virtual environments, models, caches and generated media excluded.
   The third-party animation kit is supplied separately and remains git-ignored.
@@ -99,13 +112,20 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
 
 ## Validation and remaining limits
 
-- Latest automated results: **115 Python tests and 6 Node tests pass**, plus clean syntax and
+- Latest automated results: **121 Python tests and 6 Node tests pass**, plus clean syntax and
   whitespace checks. Run the commands in [README](README.md#validation) from the checkout root.
 - Real approved-project audit: **1,624 frames, 120 snapshots, 15 shots**, zero runtime failures
   or visual flags. A synthetic error on frame 11, outside snapshot times, was detected.
 - Tests cover repair acceptance/rollback, warning thresholds, protected scenes, changed visual
   settings, setup/alignment/planning failures, early cancellation, stalled headers/tokens,
   camera-only translation and independent character movement.
+- HTML regression tests cover repeated-run replacement, both entry filenames, escaped
+  untrusted content, preview path restrictions, setup failures, stale-audit rejection and
+  fresh findings retained after a stop for review.
+- The updated Windows launcher was exercised against the approved project: it rebuilt the
+  dashboard and displayed the Y/N prompt; No exited successfully. Chrome rendered the local
+  report with 1 project, 15 scene sections, 120 previews and no page errors. The first preview
+  decoded successfully and the dashboard layout was visually inspected.
 - Live new-transport request to `gpt-oss-20b-studio64k:latest` returned OK and completion metrics.
   The whole-story planner previously validated 15 shots in 66.6 seconds. A blank synthetic
   scene was repaired and rerendered successfully. Scratch projects start `_` and are excluded.

@@ -28,3 +28,6 @@ Adnroid-App/
 Android-App/
 .venv-qwen/
 .agents/
+
+# Local scene-check dashboards and copied previews
+/reports/
