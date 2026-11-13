@@ -159,9 +159,20 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
 - Captions: offline scripts wrote dashes without spaces (`minutes—blink,`), which alignment treated as
   one word and the captions ran together. `clean_narration()` in `language_policy.py` now turns
   em/en dashes and spaced hyphens into commas where the narration is created and again before voice and
-  `script.txt` are written (`studio_gui.py`). Unit-tested; not yet confirmed in a rendered video, and
-  I did not inspect the kit's caption drawing code, so spacing may still need a look. Existing projects
-  keep old narration until their voiceover is regenerated.
+  `script.txt` are written (`studio_gui.py`). Existing projects keep old narration until their
+  voiceover is regenerated. This was NOT the whole caption bug: the 14:55 video (script without any
+  dashes) still glued words ("PROCRASTINATIONWHISPERS"). Real cause, in the kit's `engine/ui2d.js`
+  `captions()`: word gap `0.3 em` was smaller than the outline stroke (`0.16 em`) plus the current
+  word's 1.08x pop, so a long highlighted word covered the space beside it. `app/patch_captions.py`
+  (called from `patch_kit.py`, hash refresh now includes `engine/ui2d.js`) widens the gap to
+  `0.4 em + 0.04 * longest word`; verified on the real engine with that video's word timings, old vs
+  new side by side. Re-render existing projects to get it.
+- Prompt fixes from that video (`s003` close-up showed only legs; `s002` seated figure floated with no
+  chair and reached for `y=+70`, which is below the floor): `SCENE_GUIDE` now gives a close-up
+  anchoring formula (`s=E.H/200, y=E.H*0.30+208*s`), requires a chair under `sit` poses (seat top 50
+  units above the feet), and states that rig y is negative upward. That video did follow the new scale
+  (`E.H/420`) and `jointWorld` guidance and the audit passed; figures were a good size. Still
+  unverified: a run with these newest prompt changes.
 
 - Pipeline: ideas/script → English narration → kit animation, OpenArt or CastWorkshop clips → thumbnail →
   explicit YouTube Publish. Nothing is uploaded merely by generating a video.

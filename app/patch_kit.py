@@ -226,12 +226,14 @@ else:
 
 from patch_rig import patch_rig
 patch_rig(studio)
+from patch_captions import patch_captions
+print("patched caption spacing" if patch_captions(studio) else "caption spacing already patched")
 
 # Refresh hashes of the patched files.
 import hashlib, re
 vk = studio / "tools" / "verify_kit.py"
 vsrc = vk.read_text(encoding="utf-8")
-for rel in ["render.mjs", "tools/doctor.py", "engine/rig2d.js"]:
+for rel in ["render.mjs", "tools/doctor.py", "engine/rig2d.js", "engine/ui2d.js"]:
     data = (studio / rel).read_bytes().replace(b"\r\n", b"\n").strip()
     h = hashlib.sha256(data).hexdigest()[:16]
     vsrc, n = re.subn(r'("%s":\s*")[0-9a-f]{16}(")' % re.escape(rel), r"\g<1>%s\g<2>" % h, vsrc)

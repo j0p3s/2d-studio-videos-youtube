@@ -33,7 +33,12 @@ teal accents, shadows, and warm rim light. Use the SAME teal hoodie, ink-black f
 white facial features in every shot. Ground figures and props in the environment.
 For a full-body shot the character occupies 45-65% of frame HEIGHT, feet near E.H*0.72.
 A standing figure is about 234 rig units tall, so use scale s=E.H/420 (about 56% of the
-frame) for full-body shots, never a smaller scale; close-ups use a larger s.
+frame) for full-body shots, never a smaller scale. For a close-up choose where the head
+should appear, then anchor the figure from it: s=E.H/200, y=E.H*0.30+208*s (the feet are
+off-screen, which is fine). The head and shoulders must be fully visible: never a close-up
+of only legs or hips. A seated figure (sit, sitSlump) needs a chair, stool, bench or step
+under the hips, drawn with its top 50 rig units above the feet (screen y-50*s); never leave
+a sitting figure floating.
 Close-ups must frame the face or hands/prop much larger; diagram and insert shots do not
 need a standing figure. Never repeat a full-body pose just to fill a shot.
 drawFigure(g,{x:E.W*0.45,y:E.H*0.72,s:E.H/420,pose:pose('stand'),expr:'determined',
@@ -69,7 +74,8 @@ for a foot). Never compute screen positions by multiplying a pose joint by the s
 Props the character holds, uses or touches must be placed from jointWorld every frame; a prop
 that is not held must sit on a visible surface or the floor, never float, and every prop
 must serve the narration. A hand reaches only about 70 rig units from its shoulder (shoulder
-about [0,-174] standing, [0,-124] seated), and rigReach/rigPlant targets are RIG units, not
+about [0,-174] standing, [0,-124] seated; in rig units y is NEGATIVE upward, feet y=0, so a
+desk at hand height is about y=-100 and never positive), and rigReach/rigPlant targets are RIG units, not
 screen pixels: to reach a screen point (px,py) pass [(px-x)/s,(py-y)/s] where x,y,s are the
 figure's screen position and scale. If the point is farther than 70*s from jointWorld(fig,'sh'),
 the hand falls short, so move the prop or the figure closer first. Rig poses are plain objects: copy with rigPose(p,{...}).
