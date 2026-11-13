@@ -170,7 +170,31 @@ def scene_result(answer, shot_id):
     ids = re.findall(r"registerShot\(\s*['\"]([^'\"]+)['\"]", code)
     if ids != [shot_id]:
         raise ValueError('Scene must register only ' + shot_id)
-    return scene, fix_info_time(code)
+    return scene, fix_rig_imports(fix_info_time(code))
+
+
+RIG_IMPORTS = ('rigPose', 'rigBlend', 'rigSample', 'rigAdd', 'rigIdle', 'rigReach', 'rigPlant',
+               'rigWalk', 'rigRun', 'rigWalkSpeed', 'jointWorld', 'drawFigure')
+
+
+def fix_rig_imports(code):
+    """Add rig helpers the scene calls but forgot to import from /engine/rig2d.js.
+
+    A missing import fails at load time ("rigIdle is not defined") and removes the whole shot,
+    yet the fix is mechanical. Names the scene declares itself are left alone.
+    """
+    match = re.search(r"import\s*\{([^}]*)\}\s*from\s*['\"]/engine/rig2d\.js['\"]", code)
+    if not match:
+        return code
+    have = {part.split(' as ')[-1].strip() for part in match.group(1).split(',') if part.strip()}
+    body = code[:match.start()] + code[match.end():]
+    missing = [name for name in RIG_IMPORTS
+               if name not in have and re.search(r'\b' + name + r'\s*\(', body)
+               and not re.search(r'\b(?:function|const|let|var|class)\s+' + name + r'\b', body)]
+    if not missing:
+        return code
+    names = match.group(1).rstrip().rstrip(',')
+    return code[:match.start(1)] + names + ', ' + ', '.join(missing) + code[match.end(1):]
 
 
 def fix_info_time(code):

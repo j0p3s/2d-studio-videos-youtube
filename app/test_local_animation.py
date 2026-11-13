@@ -23,6 +23,17 @@ class LocalAnimationTests(unittest.TestCase):
         self.assertIn('info.p + info.dur + info.time', fixed)
         self.assertNotIn('info.t)', fixed)
 
+    def test_missing_rig_imports_are_added_but_local_declarations_are_kept(self):
+        code = ("import {E, registerShot} from '/engine/core.js';\n"
+                "import {drawFigure, rigPose, rigAdd} from '/engine/rig2d.js';\n"
+                "function rigReach(a){return a;}\n"
+                "registerShot('s001',{draw(g,t,info){drawFigure(g,{pose:rigAdd(rigPose('stand'),rigIdle(t))});"
+                "const h=jointWorld({},'hF');rigReach(h);}});")
+        scene, fixed = scene_result(json.dumps({'scene': 'Stands up', 'code': code}), 's001')
+        self.assertIn("import {drawFigure, rigPose, rigAdd, rigIdle, jointWorld} from '/engine/rig2d.js'", fixed)
+        self.assertEqual(fixed.count('rigReach'), 2)        # local function not imported
+        self.assertEqual(scene_result(json.dumps({'scene': 'Stands up', 'code': fixed}), 's001')[1], fixed)
+
     def test_regular_source_and_division_are_preserved(self):
         source = "const a = 20 / 2;\nconst b = 'literal\\n';\nconst c = /[\\/\\n]/;"
         self.assertEqual(normalize_source(source), source)
