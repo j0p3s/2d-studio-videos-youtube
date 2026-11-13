@@ -34,6 +34,26 @@ if MARK not in src:
 else:
     print("render.mjs already patched")
 
+# A full Chromium installation does not imply the separate headless-shell package
+# exists. Launch the binary we actually checked instead of Playwright's default.
+src = render.read_text(encoding="utf-8")
+old = "...(_channel ? { channel: _channel } : {})"
+new = "...(_channel ? { channel: _channel } : { executablePath: chromium.executablePath() })"
+if old in src:
+    render.write_text(src.replace(old, new, 1), encoding="utf-8")
+    print("patched render.mjs (use installed Chromium binary)")
+
+# Contact-sheet renders must reject missing modules too, before visual approval.
+src = render.read_text(encoding="utf-8")
+if '2d-studio: require scenes' not in src:
+    old = "  const [w, h] = await page.evaluate('window.OUT');"
+    new = ("  /* 2d-studio: require scenes */\n"
+           "  const missingScenes = (await page.evaluate('window.SHOT_LIST')).filter(s => !s.ok);\n"
+           "  if (missingScenes.length) throw new Error('shots have no scene file: ' + missingScenes.map(s => s.id).join(', '));\n" + old)
+    if old not in src:
+        raise RuntimeError('render.mjs: player dimensions line not found')
+    render.write_text(src.replace(old, new, 1), encoding="utf-8")
+
 # frame progress file for the GUI's progress bar (build/render_progress.json)
 PMARK = "/* 2d-studio: progress file */"
 src = render.read_text(encoding="utf-8")

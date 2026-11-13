@@ -98,6 +98,62 @@ For Codex video generation, the writable workspace is the current project. The a
 
 Visual QC allows three repair rounds plus a separate verification render. Pending QC is saved after each repair, so Auto resumes visual inspection without rebuilding the current pass. Approval is accepted only when the agent did not change project files after the reviewed images were rendered.
 
+## Faster offline animation
+
+Automatic Ollama animation uses direct requests to the local API, one scene at a time,
+instead of running a general-purpose CLI agent. The app creates the project, aligns the
+voiceover, builds the beat sheet, saves scene modules, checks JavaScript syntax and scene
+runtime errors, and runs the installed renderer and audio mixer. Claude Code is not
+required for this automatic path. The interactive agent path is unchanged.
+
+Requests use 16K context and GPT-OSS medium reasoning for animation and repairs; script
+requests retain low reasoning. A whole-video storyboard is planned first and checked for
+varied framing, concrete actions and different start/end states. Failed scenes get up to
+three attempts. Character prompts use the existing 2D rig. Completed
+scene hashes are saved in `build/local_animation.json`, so unchanged input and completed
+code are reused after a stopped run. Changed narration, visual choices or code invalidate
+the affected checkpoints. Contact sheets still need human visual review: the text-only
+model cannot approve images. Runtime validation does not establish visual quality.
+
+Optional `.env` settings: `OLLAMA_THINKING=low`, `OLLAMA_ANIMATION_THINKING=medium`,
+`OLLAMA_REPAIR_THINKING=medium`, `OLLAMA_SCENE_CONTEXT=16384`.
+`build/ollama_performance.json` records request token counts, load/generation durations,
+and total elapsed time for the scene workflow. The selected model is unloaded before
+rendering; the script model is unloaded before Qwen voice generation to free GPU memory.
+
+For a 16 GB NVIDIA GPU, test user environment variables `OLLAMA_FLASH_ATTENTION=1`,
+`OLLAMA_KV_CACHE_TYPE=q8_0`, and `OLLAMA_NUM_PARALLEL=1`. Quit and reopen Ollama after
+setting them. These are Ollama server settings; placing them only in the studio's `.env`
+does not reconfigure an already running server. Cache quantization reduces memory usage
+and may affect output; compare a successful video before assuming a speed improvement.
+
+## Check and improve offline scenes
+
+Restart the studio after updating. Every automatic offline animation now runs the local
+scene checker before final export. It samples 12%, 50% and 88% of each shot, catches runtime
+errors, and measures very low motion or nearly empty action areas without counting captions.
+Flagged scenes get one targeted local-model repair attempt, Node syntax checking and another
+real browser audit. Replacements that introduce runtime errors or fail to improve the flagged
+measurement are rolled back. Originals are saved under `build/scene_audit/backups/`.
+
+For existing offline projects, double-click `Check-Offline-Animations.cmd`, or run:
+
+```powershell
+.\.venv\Scripts\python.exe app\check_offline_scenes.py --all --repair
+.\.venv\Scripts\python.exe app\check_offline_scenes.py --project projects/my-video --repair --export
+```
+
+`--all` includes projects with a `build/local_animation.json` checkpoint; underscore-prefixed
+test projects are excluded. Without `--repair` the command only audits. `--export` explicitly
+rerenders and remixes the final video; repairs alone do not change an already exported MP4.
+Use `--model` to override the project's recorded model. No cloud services are used.
+
+Reports and three preview images per shot are saved under `build/scene_audit/`. Scenes marked
+`manual` in the checkpoint are checked but never automatically rewritten. This preserves
+hand-directed and user-approved work. The checker cannot judge beauty, narrative relevance,
+physical contact or animation quality as a human can; camera motion may pass its pixel test.
+Reports always retain `visually_approved: false`. Inspect the images/video yourself.
+
 ## License
 
 Copyright (C) 2026 j0p3s

@@ -47,6 +47,8 @@ class FakeOllama(BaseHTTPRequestHandler):
             self._send([{"status": "success"}])
         elif self.path == "/api/pull":
             self._send([{"status": "pulling", "total": 10, "completed": 5}, {"status": "success"}])
+        elif self.path == '/api/generate':
+            self._send([{'done': True}])
 
 
 class OllamaTests(unittest.TestCase):
@@ -113,6 +115,22 @@ class OllamaTests(unittest.TestCase):
         seen = []
         ollama.pull("tiny", self.env, lambda fraction, status: seen.append((fraction, status)))
         self.assertEqual(seen, [(0.5, "pulling"), (None, "success")])
+
+    def test_fast_scene_requests_set_reasoning_context_and_json(self):
+        FakeOllama.models.append('gpt-oss-test:latest')
+        ollama.text('scene', model='gpt-oss-test', env=self.env, context=16384,
+                    response_format='json', thinking='low')
+        payload = FakeOllama.seen[-1][1]
+        self.assertEqual(payload['think'], 'low')
+        self.assertEqual(payload['format'], 'json')
+        self.assertEqual(payload['options']['num_ctx'], 16384)
+        self.assertEqual(payload['keep_alive'], '15m')
+        ollama.text('repair', model='gpt-oss-test', env=self.env, thinking='medium')
+        self.assertEqual(FakeOllama.seen[-1][1]['think'], 'medium')
+
+    def test_release_selected_model(self):
+        ollama.release_model('tiny', self.env)
+        self.assertEqual(FakeOllama.seen[-1], ('/api/generate', {'model': 'tiny', 'keep_alive': 0}))
 
     def test_stopped_server_is_reported_as_not_running(self):
         self.assertFalse(ollama.is_running({"OLLAMA_HOST": "127.0.0.1:9"}))

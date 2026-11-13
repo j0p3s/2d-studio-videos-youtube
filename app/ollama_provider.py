@@ -89,6 +89,14 @@ def models(env=None):
         return [m.get("name", "") for m in json.load(reply).get("models", [])]
 
 
+def release_model(model='', env=None):
+    """Release only the studio's selected model before another GPU-heavy stage."""
+    name = model or (os.environ if env is None else env).get('OLLAMA_MODEL') or DEFAULT_MODEL
+    if is_running(env):
+        with _open('/api/generate', {'model': name, 'keep_alive': 0}, env, timeout=60) as reply:
+            reply.read()
+
+
 def _installed(name, names):
     return name in names or (":" not in name and name + ":latest" in names)
 
@@ -118,12 +126,21 @@ def pull(model, env=None, on_progress=None):
         raise RuntimeError(f"Ollama could not download {model}: {_error_text(exc)}") from exc
 
 
-def text(prompt, *, model="", env=None, on_text=None, context=TEXT_CONTEXT):
+def text(prompt, *, model="", env=None, on_text=None, context=TEXT_CONTEXT,
+         thinking=None, response_format=None, on_metrics=None):
     """One chat answer from the local model, streamed to on_text piece by piece."""
     ensure_running(env)
     name = pick_model(model, env)
     payload = {"model": name, "stream": True, "messages": [{"role": "user", "content": prompt}],
-               "options": {"num_ctx": context}}
+               "options": {"num_ctx": context}, "keep_alive": "15m"}
+    settings = os.environ if env is None else env
+    effort = thinking or settings.get('OLLAMA_THINKING', 'low')
+    if name.lower().startswith('gpt-oss'):
+        if effort not in ('low', 'medium', 'high'):
+            raise ValueError('OLLAMA_THINKING must be low, medium or high')
+        payload['think'] = effort
+    if response_format is not None:
+        payload['format'] = response_format
     # Reasoning models (gpt-oss, qwen3, ...) sometimes spend the whole reply on reasoning and stop
     # with an empty answer, so an empty reply is asked again before it counts as a failure.
     for attempt in range(EMPTY_RETRIES + 1):
@@ -134,8 +151,14 @@ def text(prompt, *, model="", env=None, on_text=None, context=TEXT_CONTEXT):
                     event = json.loads(raw or b"{}")
                     if event.get("error"):
                         raise RuntimeError(f"Ollama failed: {event['error']}")
+                    if event.get('done') and on_metrics:
+                        on_metrics({k: event[k] for k in ('total_duration', 'load_duration',
+                                    'prompt_eval_count', 'prompt_eval_duration', 'eval_count',
+                                    'eval_duration') if k in event})
                     message = event.get("message") or {}
                     reasoning += len(message.get("thinking") or "")
+                    if message.get('thinking') and on_text:
+                        on_text('')  # Give the caller a cancellation checkpoint during reasoning.
                     reason = event.get("done_reason") or reason
                     piece = message.get("content") or ""
                     if piece:

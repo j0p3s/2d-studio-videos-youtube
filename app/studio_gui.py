@@ -19,6 +19,7 @@ import traceback
 import webbrowser
 from ai_providers import PROVIDERS, TEXT_PROVIDERS, cli_command, run_agent, portable_prompt, load_env_file
 from host_render import HostAnimation
+from local_animation import LocalAnimation
 import openart_provider
 import shots_video
 from parallel_commands import CommandGroup
@@ -2042,6 +2043,9 @@ class Studio(ctk.CTk):
             (d / "script.txt").write_text(narration + "\n", encoding="utf-8")
             (d / "voiceover.srt").unlink(missing_ok=True)   # leftover from the old single-request method
             if qwen:
+                if self._job_ai.get('script_provider') == OLLAMA:
+                    ollama_provider.release_model(self._job_ai.get('script_model') or
+                                                  self._job_ai.get('ollama_model') or '', ENV)
                 if not qwen_voice.installed(HOME):
                     qwen_voice.install(HOME, PY, self.run_cmd, lambda frac, note: self.prog(frac, note))
                     self.check_cancel()
@@ -2348,6 +2352,12 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
         sel = self.opt_parts.get()
         n = max(1, min(6, round(dur / 150))) if sel == "Auto" else int(sel)
         prompts = [prompt] if n == 1 else self._part_prompts(n, dur or 60)
+        local_options = dict(voice=self.s['voice'], script=self.s['script_file'],
+                             title=self.s.get('title', self.s['slug']), aspect=self.opt_aspect.get(),
+                             resolution=self.opt_res.get(), style=STYLES[self.opt_style.get()],
+                             captions=bool(self.chk_capt.get()), music=self.opt_music.get() != 'None',
+                             music_file=self.music_file if self.music_file and self.opt_music.get().startswith('Track') else None,
+                             sfx=bool(self.chk_sfx.get()), look=self.ent_look.get().strip())
         self.anim_log.delete("1.0", "end")
         self.log(self.anim_log, f"▶ Starting animation agent in {STUDIO}  —  voiceover {dur:.0f}s, "
                                 f"{len(prompts)} pass{'es' if len(prompts) > 1 else ''}")
@@ -2359,6 +2369,22 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
             self._anim_hint = "Animation agent is reading the skill"
             threading.Thread(target=self._watch_pipeline, args=(self.s["slug"], t0, stop), daemon=True).start()
             try:
+                if self._job_ai.get('animation_provider') == OLLAMA:
+                    if self._job_ai.get('script_provider') == OLLAMA:
+                        ollama_provider.release_model(self._job_ai.get('script_model') or
+                                                      self._job_ai.get('ollama_model') or '', ENV)
+                    def run_local(cmd):
+                        lines = []
+                        def receive(line):
+                            lines.append(line)
+                            self.log(self.anim_log, line)
+                        rc = self.run_cmd(cmd, cwd=str(STUDIO), on_line=receive)
+                        return rc, '\n'.join(lines)
+                    model = self._job_ai.get('animation_model') or self._job_ai.get('ollama_model') or ''
+                    self.log(self.anim_log, 'Ollama fast workflow: one scene per request, 16K context, '
+                                           'app-managed rendering. No CLI agent required.')
+                    return LocalAnimation(STUDIO, self.s['slug'], PY, run_local, ENV, model,
+                                          self.check_cancel, lambda msg: self.log(self.anim_log, msg)).execute(**local_options)
                 if self._job_ai.get('animation_provider', 'Claude') == 'OpenAI (Codex)':
                     self.log(self.anim_log, 'Codex stays sandboxed; the app renders contact sheets and the final video.')
                     project = STUDIO / 'projects' / self.s['slug']

@@ -128,6 +128,10 @@ class HostAnimation:
                                    'Saved at visual QC; resume with the existing scenes.')
             save(index + 1)
             pending = None
+        return self.export(duration)
+
+    def export(self, duration):
+        """Only export frames from the installed renderer, never an agent's substitute MP4."""
         self.invoke(['node', 'render.mjs', '--project', str(self.project)], render=True)
         output = self.project / 'out' / 'final.mp4'
         self.invoke([str(self.python), 'audio/mix.py', '--project', str(self.project), '--out', str(output)])
@@ -139,3 +143,17 @@ class HostAnimation:
         if not {'video', 'audio'} <= streams or abs(float(info['format']['duration']) - duration) > 3:
             raise RuntimeError('The final MP4 failed audio/video or duration validation.')
         return str(output)
+
+    def export_local(self, duration):
+        """Local text models cannot perform image QC; validate scenes with the real renderer."""
+        try:
+            story = json.loads((self.project / 'story' / 'shots.json').read_text(encoding='utf-8'))
+            shots = story['shots']
+            if not shots or any(str(s.get('scene', '')).strip().upper() in
+                                ('', 'TODO', 'TBD', 'PLACEHOLDER') for s in shots):
+                raise ValueError('The shot plan still has unfinished scene descriptions.')
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise RuntimeError(f'Ollama did not finish the animation: {exc} '
+                               'Saved project files are preserved. No substitute video was accepted.') from exc
+        self.invoke(['node', 'render.mjs', '--project', str(self.project), '--sheet', '--scale', '0.5'], render=True)
+        return self.export(duration)

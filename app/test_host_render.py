@@ -125,6 +125,34 @@ class HostRenderTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     HostAnimation(folder, name, 'python', None, None, None)
 
+    def test_local_export_rejects_unfinished_plan_without_accepting_mp4(self):
+        with tempfile.TemporaryDirectory() as folder:
+            host, commands, _ = self.fixture(Path(folder))
+            plan = host.project / 'story/shots.json'
+            story = json.loads(plan.read_text())
+            for shot in story['shots']:
+                shot['scene'] = 'TODO'
+            plan.write_text(json.dumps(story))
+            output = host.project / 'out/substitute.mp4'
+            output.parent.mkdir()
+            output.write_bytes(b'black video with audio')
+            with self.assertRaisesRegex(RuntimeError, 'unfinished scene'):
+                host.export_local(10)
+            self.assertEqual(commands, [])
+
+    def test_local_export_uses_real_renderer_and_validates_streams(self):
+        with tempfile.TemporaryDirectory() as folder:
+            host, commands, _ = self.fixture(Path(folder))
+            plan = host.project / 'story/shots.json'
+            story = json.loads(plan.read_text())
+            for shot in story['shots']:
+                shot['scene'] = 'Character wakes and stretches'
+            plan.write_text(json.dumps(story))
+            self.assertTrue(Path(host.export_local(10)).exists())
+            self.assertIn('--sheet', commands[0])
+            self.assertTrue(any('audio/mix.py' in cmd for cmd in commands))
+            self.assertEqual(commands[-1][0], 'ffprobe')
+
 
 if __name__ == '__main__':
     unittest.main()
