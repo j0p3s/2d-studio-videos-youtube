@@ -162,3 +162,20 @@ test('geometry audit accepts every solved skeleton pose and gait frame', async (
   for (let ph = 0; ph < 2 * Math.PI; ph += 0.1) { assert.deepEqual(check(rigWalk(ph)), [], 'walk'); assert.deepEqual(check(rigRun(ph)), [], 'run'); }
   assert.deepEqual(check(rigPose('explain'), 'tall'), []);
 });
+test('rig poses expose read-only solved joints so legacy code like pose.hF[0] keeps working', () => {
+  const p = rigAdd(rigReach(rigPose('sit'), 'F', [40, -90]), rigIdle(1));
+  const j = rigJoints(p);
+  for (const k of JOINTS) assert.deepEqual(p[k], j[k], k);
+  assert.ok(Number.isFinite(p.hF[0]) && Number.isFinite(p.hF[1]));
+  assert.ok(!Object.keys(p).some((k) => JOINTS.includes(k)), 'joints must not be enumerable');
+  const copy = { ...p, shoulderF: 90 };                         // copies keep only channels
+  assert.equal(copy.hF, undefined); assert.ok(Number.isFinite(rigJoints(copy).hF[0]));
+  const live = rigPose('stand'); const before = live.hF[1]; live.shoulderF = 150;
+  assert.ok(live.hF[1] < before, 'joint getters follow later channel edits');
+  assert.equal(rigPose(p).shoulderF, p.shoulderF);
+});
+test('passing joint names to rigPose explains the difference between angles and positions', () => {
+  assert.throws(() => rigPose('stand', { head: [0, -200] }), /joint POSITION.*rigReach.*jointWorld/);
+  assert.throws(() => rigPose('stand', { hF: [1, 2] }), /joint POSITION/);
+  assert.throws(() => rigPose('stand', { neckF: 3 }), /Unknown rig channel 'neckF'/);
+});

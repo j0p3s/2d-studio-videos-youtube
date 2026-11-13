@@ -138,6 +138,13 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
   Verified: 34 JS and 154 Python tests, one skeleton scene through the scene checker, contact sheets
   of every pose and gait, and a render through the real `drawFigure`. Not verified: how well the local
   Ollama model follows the new API, the run cycle's look (slightly crouched), or a full new video.
+  First real offline Auto run (2026-11-13 13:44, `gpt-oss:20b`) exposed integration gaps: the model read
+  `pose.hF` (undefined on angle poses), passed joint names such as `head` to `rigPose`, and invented
+  `neckF`. Fixed: rig poses now expose read-only solved joints (`pose.hF`, non-enumerable), joint-name
+  errors explain angles vs positions, and `SCENE_GUIDE` teaches `jointWorld(fig,'hF')` for props. The
+  failed project re-rendered with no shot errors; press Auto again to continue from step 4. Other errors
+  in that log (`g.fillStyle is not a function`, `const g` redeclared, `sh += n`) are generic model
+  mistakes the existing repair pass fixed. Not yet re-run through the model end to end.
   Hoodie/face rendering is unchanged (uniform-width limbs; tapered limbs/hands/feet are a possible
   next step). Restart the GUI to load the engine update.
 

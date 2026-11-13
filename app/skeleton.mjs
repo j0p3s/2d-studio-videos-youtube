@@ -46,10 +46,16 @@ function lengths(build) {
 }
 
 export const isRigPose = (p) => !!p && typeof p === 'object' && !Array.isArray(p) && p.rig === 1;
+const JOINT_KEYS = ['head', 'sh', 'hip', 'eF', 'hF', 'eB', 'hB', 'kF', 'fF', 'kB', 'fB'];
 
 function normalise(p) {
   if (!p || typeof p !== 'object') throw new TypeError('Rig pose must be an object');
-  for (const k of Object.keys(p)) if (k !== 'rig' && k !== 'height' && !(k in CHANNELS)) throw new TypeError(`Unknown rig channel '${k}'. Valid: ${RIG_CHANNELS.join(', ')}, height`);
+  for (const k of Object.keys(p)) {
+    if (k !== 'rig' && k !== 'height' && !(k in CHANNELS)) {
+      if (JOINT_KEYS.includes(k)) throw new TypeError(`'${k}' is a joint POSITION, not a rig channel: rig poses are joint ANGLES (${RIG_CHANNELS.join(', ')}). Move a hand or foot with rigReach/rigPlant, and read joint positions from the pose (pose.${k}) or jointWorld(figure,'${k}')`);
+      throw new TypeError(`Unknown rig channel '${k}'. Valid: ${RIG_CHANNELS.join(', ')}, height`);
+    }
+  }
   const n = { rig: 1 };
   for (const [k, [d, lo, hi]] of Object.entries(CHANNELS)) {
     const v = p[k] ?? d;
@@ -60,6 +66,9 @@ function normalise(p) {
     if (!Number.isFinite(p.height) || p.height < 0) throw new TypeError('Rig height must be a finite number >= 0');
     n.height = p.height;
   }
+  // Read-only solved joints (pose.hF, pose.head, ...) so code written for the old joint-array
+  // poses can still read positions. Non-enumerable: spread/copy keeps only the real channels.
+  for (const k of JOINT_KEYS) Object.defineProperty(n, k, { enumerable: false, configurable: true, get() { return rigJoints(this)[k]; } });
   return n;
 }
 
