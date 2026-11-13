@@ -119,7 +119,11 @@ are rejected. The figure itself must move: never pass one fixed rigPose('stand')
 shot; use rigSample between at least two poses whose arms or torso differ by 40+ degrees, in
 both full-body and close-up shots. Never write the narration sentence into a thought bubble or
 caption box; show what the sentence describes instead. Any text or page drawn in the scene
-must be at least E.H*0.03 high or not drawn; never draw unreadable micro text.
+must be at least E.H*0.03 high or not drawn; never draw unreadable micro text. Keep every prop
+fully inside the frame (a lamp, window or page may not be cut off by the screen edge) and give
+it a believable shape: a bed has a headboard, mattress, pillow and blanket, not one grey block.
+Diagram shots use big simple shapes (each at least a quarter of the frame width) with 1-3 word
+labels at E.H*0.04 or larger that sit inside their shapes and never overlap each other.
 Return JSON only: {"scene":"specific action description","code":"complete ES module source"}.
 """
 
@@ -170,7 +174,20 @@ def scene_result(answer, shot_id):
     ids = re.findall(r"registerShot\(\s*['\"]([^'\"]+)['\"]", code)
     if ids != [shot_id]:
         raise ValueError('Scene must register only ' + shot_id)
+    reject_narration_text(code)
     return scene, fix_rig_imports(fix_info_time(code))
+
+
+def reject_narration_text(code):
+    """The player draws the captions. A scene that writes a whole sentence on screen (often the
+    narration itself, in a huge or clipped text box) is rejected so the model redraws the action."""
+    without_comments = re.sub(r'/\*.*?\*/|//[^\n]*', '', code, flags=re.S)
+    for match in re.finditer(r"""(['"`])((?:\\.|(?!\1).){40,}?)\1""", without_comments):
+        text = match.group(2)
+        if len(text.split()) >= 6 and not re.search(r'[{}();=]|\$\{', text):
+            raise ValueError('Scene draws a sentence of text (' + json.dumps(text[:60]) + '). Captions are drawn by '
+                             'the player: remove the sentence and show what it describes. Labels are at most '
+                             '1-3 words, large and fully inside the frame.')
 
 
 RIG_IMPORTS = ('rigPose', 'rigBlend', 'rigSample', 'rigAdd', 'rigIdle', 'rigReach', 'rigPlant',

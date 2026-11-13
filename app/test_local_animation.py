@@ -34,6 +34,15 @@ class LocalAnimationTests(unittest.TestCase):
         self.assertEqual(fixed.count('rigReach'), 2)        # local function not imported
         self.assertEqual(scene_result(json.dumps({'scene': 'Stands up', 'code': fixed}), 's001')[1], fixed)
 
+    def test_scene_that_writes_the_narration_sentence_is_rejected(self):
+        bad = ("registerShot('s003',{draw(g,t,info){const line = 'That single sentence shifts your brain "
+               "from procrastination to action.'; g.fillText(line, 10, 10);}});")
+        with self.assertRaisesRegex(ValueError, 'sentence of text'):
+            scene_result(json.dumps({'scene': 'Face close-up', 'code': bad}), 's003')
+        ok = ("registerShot('s003',{draw(g,t,info){// a long comment about the whole narration sentence here to ignore\n"
+              "g.fillText('Action', 10, 10); g.fillText('Procrastination', 10, 40);}});")
+        scene_result(json.dumps({'scene': 'Two labels', 'code': ok}), 's003')
+
     def test_regular_source_and_division_are_preserved(self):
         source = "const a = 20 / 2;\nconst b = 'literal\\n';\nconst c = /[\\/\\n]/;"
         self.assertEqual(normalize_source(source), source)
