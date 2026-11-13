@@ -1,7 +1,7 @@
 """Build a video from AI-generated shots: slice the voiceover into shots, ask the script AI for
 one image prompt and one camera-motion prompt per shot, generate the stills (and optionally a
 short clip from each still) with the selected provider, then cut them to the narration with
-FFmpeg. No GrowKaz kit, Whisper or agent is involved.
+FFmpeg. No animation kit, Whisper or agent is involved.
 
 Files are the truth here too: every still and clip is saved under <project>/<folder>/ and a
 second run (after a failure, a cancel or an empty credit balance) reuses what already exists.
