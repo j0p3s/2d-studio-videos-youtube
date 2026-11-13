@@ -7,7 +7,7 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
 
 - Checkout: `C:\Users\Joao\Desktop\2D-Animation-Studio-Setup`.
 - Repository: https://github.com/j0p3s/2d-studio-videos-youtube, branch `main`.
-  Published implementation `18def2f`; model-ignore update `cc6882e`; skeletal rig `5b7f753`. Use Git refs for the
+  Published implementation `18def2f`; model-ignore update `cc6882e`; skeletal rig `5b7f753`; rig/prompt/caption follow-ups through `820e817`. Use Git refs for the
   current tip. Direct source/documentation updates to `main` are authorized; no PR merge
   is necessary for a direct push. Source updates do not publish generated videos.
 - `.gitignore` excludes `models/` and `Models/` at every depth, common weight extensions,
@@ -173,6 +173,12 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
   units above the feet), and states that rig y is negative upward. That video did follow the new scale
   (`E.H/420`) and `jointWorld` guidance and the audit passed; figures were a good size. Still
   unverified: a run with these newest prompt changes.
+- Next check (needs a fresh 15s offline run after restarting the GUI): captions have a visible gap
+  beside the highlighted word; close-ups show head and shoulders; seated figures sit on a drawn chair;
+  reach targets are above the floor. Open ideas, not built: an audit check for too-small figures,
+  letting `rigPose` accept hand/foot positions (`hF`, `fF`, ...) by calling `rigReach`/`rigPlant`
+  (the model keeps trying it; the retry fixes it in about a minute), tapered limbs/hands/feet, and
+  tuning the slightly crouched run cycle.
 
 - Pipeline: ideas/script → English narration → kit animation, OpenArt or CastWorkshop clips → thumbnail →
   explicit YouTube Publish. Nothing is uploaded merely by generating a video.
