@@ -1447,7 +1447,7 @@ class Studio(ctk.CTk):
         self.ent_custom = ctk.CTkEntry(top, placeholder_text="Type your own sub-niche", width=230)
         self.opt_len = ctk.CTkOptionMenu(top, values=["Shorts 60s", "2 min", "3-4 min", "5 min", "6 min",
                                                       "8 min", "10 min", "12 min"], width=110)
-        self.opt_len.set("3-4 min")
+        self.opt_len.set("Shorts 60s")   # default length (user request, 2026-11-13)
         self.opt_len.grid(row=0, column=4, padx=8)
         ctk.CTkButton(top, text="✨ Get 10 ideas", height=36, command=self.get_ideas).grid(row=1, column=0, columnspan=7, sticky="w",
                                                                                           padx=16, pady=(0, 14))
