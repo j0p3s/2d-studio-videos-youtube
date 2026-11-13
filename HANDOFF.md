@@ -121,6 +121,24 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
   0.77/0.13/0.18/0.90. The user watched the re-rendered video (`out/final.mp4`, 19.94s, 9:16) and approved its animation
   on 2026-11-13. That approval covers these hand-built scenes only: a fresh automatic run with the new prompt has not
   been checked, and the thumbnail step (Auto 5/5) has not been run for it.
+- Second automatic run (`the-5-minute-habit-hack-that-guarantees-11131537`, new prompt) first stopped at the audit
+  (s003 static after one repair), then finished with every shot passing the audit, but the frames were still weak:
+  figure on a flat block instead of a bed, no pen contact, props cropped at the screen edge, s003 wrote the whole
+  narration sentence in a huge clipped box, s004 had two plain circles with tiny overlapping labels and no character.
+  The audit cannot catch these; only viewing frames can. Quality of `gpt-oss:20b` output remains the limit; the hand-built
+  11131502 scenes are the bar.
+- Generator safeguards added since (all in `app/local_animation.py` / `app/check_offline_scenes.py`, with tests):
+  `fix_info_time` (info.t -> t), `fix_rig_imports` (adds forgotten rig2d imports), `reject_narration_text` (a sentence of
+  six or more words in a scene is rejected so the retry redraws it), and `check_project` now retries a flagged scene
+  up to 3 times, telling the model why the last attempt was rejected, before Auto stops. Prompt covers props at
+  `jointWorld`, no fixed standing pose, props inside the frame, believable beds and large diagram labels.
+- GUI (`app/studio_gui.py`): the status bar keeps Stop and Buy me a coffee fixed while long status text is clipped;
+  the window opens centered on the screen (corrected for title bar/borders and DPI). Restart the GUI to load these.
+- Commits on `main` after `820e817`: `1685af6` info.t, `1115509` prompt/audit threshold 0.02, `82514b3` handoff,
+  `2d2e868` status bar, `019dc9e` window centering, `5c34e44` repair retries, `672a2ad` rig imports, `0a73211` sentence-text check.
+- Next: run Auto on another new video and view real frames (a tool hook may block large images; small JPEGs and the
+  built-in browser worked). If scenes stay weak, consider a stronger audit for cropped props/missing character, or hand-built
+  scene templates for common beats (waking, writing at a desk, holding a timer) that the prompt can reference.
 - Ollama repetition-loop errors (`token repeat limit reached`) now receive bounded local
   recovery, not a quota/paywall message. Aborted answers are discarded; at most three
   attempts are made, adjusting sampling and GPT-OSS reasoning. Stop/other errors propagate.
