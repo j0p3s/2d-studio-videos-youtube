@@ -124,6 +124,7 @@ def readable_theme():
     theme["CTkComboBox"].update(text_color=white, border_color=["#7d8794", "#7d8794"],
                                 button_color=[BUTTON, BUTTON], button_hover_color=[BUTTON_HOVER, BUTTON_HOVER])
 SIDEBAR_BG, CARD_BG = "#0f1115", "#171a21"
+COFFEE_URL = "https://buymeacoffee.com/j0p3s"
 
 
 # ----------------------------------------------------------------------------- helpers
@@ -344,6 +345,11 @@ class Studio(ctk.CTk):
         self.btn_stop = ctk.CTkButton(bar, text="■ Stop", width=80, fg_color="#7f1d1d", hover_color="#991b1b",
                                       state="disabled", command=self.stop_job)
         self.btn_stop.grid(row=0, column=3, padx=12)
+        self.btn_coffee = ctk.CTkButton(bar, text="☕ Buy me a coffee", width=150, fg_color="#ffdd00",
+                                        hover_color="#e6c700", text_color="#111111",
+                                        font=ctk.CTkFont(size=13, weight="bold"),
+                                        command=lambda: webbrowser.open(COFFEE_URL))
+        self.btn_coffee.grid(row=0, column=4, padx=(0, 12))
         self._job = None
         self._cancel = False
 
