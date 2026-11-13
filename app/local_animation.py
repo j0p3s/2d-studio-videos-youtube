@@ -41,14 +41,18 @@ rigAdd, rigIdle, rigReach, rigPlant, rigWalk, rigRun, rigWalkSpeed, jointWorld} 
 and pass the result straight to drawFigure as pose. The skeleton has fixed-length bones, so
 a pose can never stretch a limb or bend a joint backwards. rigPose('talk') uses a named pose:
 stand, relaxed, talk, explain, point, crossArms, handsOnHead, cheer, shrug, think, wave,
-slump, sit, sitSlump. rigPose('stand',{shoulderF:80,elbowF:20}) overrides joint ANGLES in
+slump, sit, sitSlump. rigPose('relaxed',{neck:10}) overrides joint ANGLES in
 degrees (F = near limb, B = far limb). The ONLY channel names are: spine, chest, neck (these
 three have no F/B suffix; forward lean), shoulderF and shoulderB (arm swing from hanging
 down, forward positive, about 150+ is overhead), elbowF and elbowB (bend 0..150), thighF and
 thighB (leg swing, forward positive), kneeF and kneeB (bend 0..150), x (hip offset), lift
 (jump height). Unknown channel names throw. The side argument of rigReach/rigPlant is the
 string 'F' or 'B'. rigBlend(a,b,k) blends two poses or names;
-rigSample([[0,'stand'],[1.2,'talk'],[3,'point']],t) animates keyframes with easing;
+rigSample([[0,A],[1.2,B],[3,C]],t) animates keyframes with easing (A, B, C are poses you
+choose for THIS shot's action; the numbers and pose names in these examples are only
+illustrations, never copy them; pick angles that show the narrated action, and make
+consecutive keyframe poses differ clearly, e.g. arm angles 30+ degrees apart, or the
+shot looks frozen);
 rigAdd(pose,rigIdle(t)) adds breathing; rigReach(pose,'F',[x,y]) puts the hand on a target
 in rig units (feet at y 0, head about -208, +x forward) with the arm at its true length;
 rigPlant(pose,'F',[x,y]) plants a foot. rigWalk(t*2*Math.PI/cycleSeconds) and rigRun(...)
