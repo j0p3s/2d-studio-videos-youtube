@@ -336,11 +336,15 @@ class Studio(ctk.CTk):
     def _build_statusbar(self):
         bar = ctk.CTkFrame(self, height=46, fg_color=SIDEBAR_BG, corner_radius=0)
         bar.grid(row=1, column=1, sticky="ew")
-        bar.grid_columnconfigure(1, weight=1)
-        self.lbl_status = ctk.CTkLabel(bar, text="Ready", anchor="w", text_color="#aab2bf")
-        self.lbl_status.grid(row=0, column=0, padx=16, pady=10, sticky="w")
-        self.progress = ctk.CTkProgressBar(bar, height=10, progress_color=ACCENT)
-        self.progress.grid(row=0, column=1, padx=10, sticky="ew")
+        # The status text lives in its own clipped area: a long message is cut off at the edge of
+        # that area (hidden behind the controls) and can never push Stop / Buy me a coffee away.
+        bar.grid_columnconfigure(0, weight=1)
+        status_area = ctk.CTkFrame(bar, width=1, height=30, fg_color="transparent", corner_radius=0)
+        status_area.grid(row=0, column=0, sticky="ew", pady=8)
+        self.lbl_status = ctk.CTkLabel(status_area, text="Ready", anchor="w", text_color="#aab2bf")
+        self.lbl_status.place(x=16, rely=0.5, anchor="w")
+        self.progress = ctk.CTkProgressBar(bar, width=150, height=10, progress_color=ACCENT)
+        self.progress.grid(row=0, column=1, padx=10)
         self.progress.set(0)
         self.lbl_pct = ctk.CTkLabel(bar, text="", width=230, anchor="e", text_color="#d6dbe3",
                                     font=ctk.CTkFont(family="Consolas", size=12))
