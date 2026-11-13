@@ -1,7 +1,7 @@
 """2D Animation Studio - Windows GUI.
 
-Pipeline:  ideas + script (via the selected AI)  ->  voiceover (edge-tts or your file)
-           ->  stick-figure animation (the selected agent runs the make-2d-video skill)
+Pipeline:  ideas + script (via the selected AI)  ->  voiceover (Piper, Qwen3, Edge or recording)
+           ->  stick-figure animation (app-managed local Ollama or the selected coding agent)
                or OpenArt AI shots cut to the narration (shots_video + openart_provider, no agent)
            ->  thumbnail  ->  YouTube upload (YouTube Data API v3).
 """

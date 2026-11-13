@@ -248,7 +248,7 @@ def run_agent(provider, prompt, run_cmd, *, cwd, env=None, animation=False,
     if animation and (not skill_dir or not (Path(skill_dir) / 'SKILL.md').is_file()):
         raise RuntimeError("Animation skill missing. Re-run the studio installer from Setup.")
     if provider == OLLAMA:
-        if animation:   # needs an agent: the studio runs the Claude Code CLI against Ollama instead
+        if animation:   # automatic scenes are app-managed; optional tool operations use the CLI bridge
             raise RuntimeError("Ollama animation is started by the studio, not by run_agent.")
         return ollama_provider.text(portable_prompt(prompt, skill_dir, False), model=model, env=env,
                                     on_text=(lambda piece: on_event("text", piece)) if on_event else None)

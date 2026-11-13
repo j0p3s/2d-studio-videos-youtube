@@ -26,14 +26,13 @@ def audit(host):
 
 
 def accept_repair(before, after):
-    if after['runtime_errors'] or after['missing']:
+    if after['runtime_errors'] or after['missing'] or after.get('issues'):
         return False
-    if before['runtime_errors'] or before['missing']:
-        return True
-    # A pixel heuristic is only evidence for the specific weakness it flagged.
-    if before['motion_ratio'] < .008 and after['motion_ratio'] <= before['motion_ratio']:
+    # Clear the thresholds, not just a tiny relative gain. Also reject regressions
+    # in a previously healthy measurement when repairing a different problem.
+    if after['motion_ratio'] < .008:
         return False
-    if before['color_spread'] < 9 and after['color_spread'] <= before['color_spread']:
+    if after['color_spread'] < 9:
         return False
     return True
 
@@ -132,6 +131,11 @@ def check_project(host, *, request=None, log=print):
     blocking = [x['id'] for x in final['shots'] if x['runtime_errors'] or x['missing']]
     if blocking:
         raise RuntimeError('Unresolved scene runtime failures: ' + ', '.join(blocking))
+    unresolved = [x['id'] for x in final['shots'] if x['issues'] and
+                  not complete.get(x['id'], {}).get('manual')]
+    if request is not None and unresolved:
+        raise RuntimeError('Scene audit still needs review: ' + ', '.join(unresolved) +
+                           '. Original code and the audit report are preserved; final export was not approved.')
     return final
 
 

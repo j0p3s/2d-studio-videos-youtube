@@ -1,17 +1,17 @@
 # 2D Animation Studio (Windows)
 
-A one-click setup and desktop app for making faceless, animated, stick-figure YouTube videos with Claude Code, OpenAI Codex or Gemini, then uploading them.
+A Windows desktop app for narrated stick-figure videos with local Ollama or connected AI providers, optional OpenArt shots and YouTube upload. Offline animation uses an app-managed storyboard, scene generation, checks and export pipeline.
 
 ## Install
 0. The animation kit is not part of this repository. Get `GrowKaz_Stickman.plugin` and put it in the `plugin\` folder beside the installer, or in your Downloads folder.
 1. Double-click **`Install-2D-Studio.cmd`**. It installs whatever is missing:
    - Git, Node.js LTS, Python 3.12 and FFmpeg (through winget)
    - the Claude Code CLI
-   - the **animation studio kit**, taken from `plugin\GrowKaz_Stickman.plugin`, along with three.js, Playwright and a headless Chromium
+   - the **animation studio kit**, taken from `plugin\GrowKaz_Stickman.plugin`, with three.js and Playwright; rendering uses a complete bundled Chromium or installed Chrome/Edge
    - Python packages: numpy, scipy, faster-whisper, edge-tts, piper-tts, customtkinter, Pillow and the YouTube API client
    - Claude Code skills: `make-2d-video`, `new-video`, `render-video`, `video-sound`, `video-styles` and **`scriptforge`** (the "2D Niche Prompt" PDF turned into a skill)
 2. Everything owned by the studio lives beside `Install-2D-Studio.cmd` and `Launch-2D-Studio.cmd`: settings, YouTube credentials, projects, AI settings, skills, caches and the local Python environment. Keep this folder in a writable location.
-3. In **Setup**, choose your providers for **Ideas & script** and **Animation & character designs** independently. Claude remains the default. Sign in to each provider you select.
+3. In **Setup**, choose providers for **Ideas & script** and **Animation & character designs** independently. Sign in for CLI providers, configure an API key for Gemini API, or install/download a local Ollama model for offline use.
 
 ## AI providers
 
@@ -20,21 +20,23 @@ A one-click setup and desktop app for making faceless, animated, stick-figure Yo
 | Claude | **Log in to Claude** | Existing Claude Code workflow and skills. |
 | OpenAI (Codex) | **Install OpenAI (Codex)**, then **Sign in: OpenAI (Codex)** | Codex CLI with its saved ChatGPT/API authentication. |
 | Gemini | **Install Gemini**, then **Sign in: Gemini** | Gemini CLI with its own Google/API authentication. |
+| Gemini API | Configure `GEMINI_API_KEY` in the studio `.env` | Text uses the API directly; tool-based animation uses the Gemini CLI with that key. |
+| Ollama (offline) | Install Ollama and download a model once | Local API for ideas/scripts and automatic animation; no Claude login or CLI agent needed for automatic animation. Optional tool-based design/agent operations retain the CLI bridge. |
 | OpenArt (AI video) | **Install OpenArt**, then **Sign in: OpenArt** (browser login, no API key) | Animation only. The official `openart` CLI generates one AI still per shot and optionally a short clip from it; the studio cuts the shots to the narration with FFmpeg. No animation kit or agent involved. |
 
-Models are optional: leave the field blank to use the CLI default. Provider and model selections are saved for the next run; each active job keeps the selections it started with. Voiceover, GPU rendering and YouTube upload use the same pipeline for every provider. CLI authentication is managed by the vendor; the app does not copy credentials into its settings.
+Provider/model selections are saved; each active job keeps its initial selection. A blank model uses the adapter default; API/Ollama requests require an available or installed model. Setup offers model lists when supported. Voice engines are selected separately. CLI authentication is managed by the vendor rather than copied into `settings.json`. YouTube upload needs a connection and the Publish action.
 
-All generated video content is **English only**, regardless of the language used to give instructions: scripts, narration, metadata, subtitles and on-screen text. This applies to Claude, Codex and Gemini, including revisions and interactive animation prompts. Imported/edited scripts are normalized into English. Edited narration is translated before speech generation when needed; unchanged English narration is preserved.
+All generated video content is **English only**, regardless of the language used to give instructions: scripts, narration, metadata, subtitles and on-screen text. This applies to every provider, including revisions and interactive prompts. Imported/edited scripts are normalized into English. Edited narration is translated before speech generation when needed; unchanged English narration is preserved.
 
-Speech generation always uses **Microsoft Neural (Edge)** with an English voice; the default is `en-US-AndrewMultilingualNeural`, reading English narration. English US, UK and Australian voice options remain available. Saved Portuguese voices are replaced with the English default, and saved ElevenLabs engine selections reset to Microsoft. ElevenLabs is not offered in the voice-generation UI. Imported recordings are checked for English speech in the first 30 seconds using Whisper; uncertain or non-English recordings are rejected. Old unverified/non-English voice references are cleared from the current pipeline so Auto regenerates speech; the media files remain on disk. Restart the GUI after updating.
+Voiceover supports **Piper (offline)**, **Qwen3 (calm, on this PC)** and **Free (Edge)**. Piper is the default, with `en_US-joe-medium`; download its voice once. Qwen3 is optional, runs in `.venv-qwen`, and can use an NVIDIA GPU; Setup installs its dependencies/model once. Edge needs internet and offers English Microsoft voices. Offline mode replaces Edge with Piper; selected Qwen3 remains local. ElevenLabs is not offered in the voice-generation UI. Imported recordings are checked for English speech in the first 30 seconds with Whisper; uncertain/non-English recordings are rejected. Clearing old unverified references does not delete their media.
 
-Codex and Gemini receive the animation skill and reference paths explicitly, so animation does not depend on Claude Code being installed. Text tasks request text-only operation in read-only/plan mode. Animation uses Codex workspace-write or Gemini auto-edit; commands requiring extra permission can fail in headless mode. **Full auto** applies only to Claude/Gemini. Codex keeps its sandbox while the app handles rendering. Gemini trusts the current working folder for that invocation. Final publishing still requires the app's Publish action.
+Codex and Gemini receive skill/reference paths explicitly. Text tasks request text-only operation; agent animation uses Codex workspace-write or Gemini auto-edit. The **Full auto** permission setting controls agent CLIs: Codex remains sandboxed while the app renders. Automatic Ollama animation uses direct local requests and app-owned commands instead. Its text-only checks cannot provide visual approval. Final publishing still requires the app's Publish action.
 
-The installer provisions the local animation skills under `.claude/skills` beside the launchers for all three providers. For manual updates, include `app/ai_providers.py` alongside `studio_gui.py`. Run adapter tests with `python -m unittest discover -s app -p test_ai_providers.py`. A missing login, unavailable model or exhausted quota is reported as an error; the app does not silently substitute another provider.
+The installer provisions animation skills under `.claude/skills` for agent-based operations. Automatic Ollama animation uses a focused API guide rather than loading the full agent skill into each request. Missing logins, unavailable models and exhausted quotas are reported instead of silently switching providers.
 
 You can run the installer again at any time. It skips anything already installed and never touches your `projects\` folder.
 
-For a manual app update, copy the changed files from `app` into `.\app`, including `video_encoder.mjs` alongside `patch_kit.py`. Run the installed patcher with the installed `growkaz-stickman-studio` directory as its argument. Restart the GUI after updating Python files. The installer performs the copy and patch steps automatically.
+Close the GUI before updating. Update the entire `app` folder and root launchers/documentation, not just `studio_gui.py`: the offline pipeline/checker has several modules. For a clean Git checkout, use `git pull --ff-only`; preserve local edits first. Reapply patches with `.\.venv\Scripts\python.exe app\patch_kit.py growkaz-stickman-studio`, then restart the studio. The installer applies patches when provisioning the kit. See [offline workflow and troubleshooting](docs/OFFLINE-WORKFLOW.md).
 
 > Remotion, which the tutorial installs, isn't needed. The plugin draws every frame with canvas and three.js in headless Chromium and encodes with FFmpeg.
 
@@ -42,8 +44,8 @@ For a manual app update, copy the changed files from `app` into `.\app`, includi
 | Step | What it does |
 |---|---|
 | **① Script** | Pick a niche and a length (Shorts up to 12 min) to get 10 ideas through your selected script provider. Pick one and you get the full script, alternative titles, tags, a description and thumbnail text. Type edit requests to revise it. |
-| **② Voiceover** | Uses English Microsoft Neural voices, including Andrew, Guy, Aria and Jenny, for every AI provider. You can also import a recording verified as English. |
-| **③ Animate** | Your selected animation agent runs the stick-figure animation pipeline: Whisper timestamps, a shot plan, code-drawn 2D/3D scenes, music, sound effects and the final MP4. Long videos are built in several *parts*, one agent pass per section. **Suggest character styles** renders 4 character looks for you to choose from. **Open animation agent** lets you run it interactively instead. With **OpenArt (AI video)** selected, the studio instead splits the voiceover into shots of a few seconds, asks your script AI for an image and camera prompt per shot, generates them with the OpenArt CLI and cuts them to the narration (see below). |
+| **② Voiceover** | English speech with Piper, Qwen3 or Edge, or import a recording verified as English. |
+| **③ Animate** | Automatic Ollama: alignment → whole-story direction → bounded 2D scene requests → all-frame runtime/motion checks → render/mix. Agent providers can create 2D/3D scenes in passes. Optional character-design/interactive tools use provider adapters. OpenArt instead generates images/clips and assembles them to narration. |
 | **④ Upload** | Makes a thumbnail from a video frame with big text on it, fills in the title, description and tags from the script, and uploads to YouTube (private, unlisted, public or scheduled). |
 
 ## OpenArt (AI-generated shots)
@@ -57,7 +59,7 @@ OpenArt is an alternative to the stick-figure pipeline for the **Animation** sta
 
 1. **Setup → Install OpenArt** downloads the release binary into the studio's `.tools` folder (nothing is added to your Windows PATH or profile). Then **Sign in: OpenArt** opens a console and your browser for the OAuth login; the credential is stored inside the studio (`.runtime\home\.openart`). **Check OpenArt account** shows your plan and credit balance.
 2. In **Setup** choose **OpenArt (AI video)** for *Animation & character designs*. Keep a text AI (Claude, Codex, Gemini API or Ollama) for *Ideas & script*: it also writes the shot prompts. The *Image model* and *Video model* boxes take OpenArt model ids (defaults `nano-banana-2` and `kling-3-omni`; `openart model list` and `openart model cost` show what your account offers and what it charges). The stage's Model box is not used.
-3. Choose **Stills + AI video clips** or **Stills only (Ken Burns, cheaper)** and the seconds per shot (default 6, 3–20). A 10-minute voiceover at 6 s is 100 shots; each shot costs credits, so Make the video asks before it starts (Auto does not).
+3. With **Save OpenArt credits** off, choose **Stills + AI video clips** or **Stills only (Ken Burns, cheaper)** and seconds per shot (custom default 6, range 3–20). Saving mode uses its longer still-only defaults described above. A 10-minute voiceover at 6 s is 100 shots; each generated shot can cost credits, so Make the video asks before it starts (Auto does not).
 4. **OpenArt parallel shots** in Setup controls simultaneous scenes (default 3, range 1-4; 1 runs sequentially). Each scene generates its still before its clip. Local FFmpeg assembly stays sequential and preserves scene order. This reduces waiting when OpenArt accepts simultaneous requests; it does not reduce credits per scene. If the account limits concurrent requests, lower this setting. Changing it preserves the existing shot cache.
 
 **Stop** terminates every active local OpenArt command and prevents new requests. OpenArt may still complete or charge for work already submitted on its servers. On a generation error, no new scenes are scheduled; other in-flight requests are allowed to finish and save their media for resume. Press Auto and choose Continue after resolving the error.
@@ -70,8 +72,10 @@ Go to **Upload → YouTube setup** and follow the steps there. You create a free
 **Already have a `token.json`?** Put it in `.\youtube\token.json` and restart the app. It needs the `youtube.upload` scope and must contain `refresh_token`, `client_id`, `client_secret` and `token_uri`. If uploads fail, put your `client_secret.json` in the same folder, delete `token.json`, and click **Connect** again. Never commit either file (`.gitignore` already excludes them).
 
 ## Troubleshooting
-- **Installer sits at "Downloading Chromium … 100%" and doesn't move.** Antivirus is blocking the unpack of `chrome.dll`. Press **Ctrl+C**, answer **N**, and let the installer finish. `app/patch_kit.py` (applied by the installer) makes the renderer use your installed **Chrome or Edge** instead, and the studio's doctor accepts that.
-- **faster-whisper / `av` fails to install.** Very new Pythons (3.14+) have no packages for it yet. The installer prefers Python 3.12, 3.11, 3.13 or 3.10 (installing 3.12 if none is present), saves the choice in `python.txt`, and the launcher uses it.
+- **Qwen prints SoX or `flash-attn` warnings.** These are Python voice dependencies, not Ollama. Inspect the `QWEN device`/completion lines and exit status: an import warning alone does not establish failure or CPU fallback. Python `flash-attn` and Ollama Flash Attention are separate.
+- **Scene audit still needs review.** Inspect `build/scene_audit/report.json` and its images. Rejected repairs are rolled back; unresolved generated-scene warnings stop export. Human review is still required.
+- **Browser download stalls or a headless-shell executable is missing.** Reapply the kit patcher and use installed Chrome/Edge. The renderer launches the full bundled Chromium executable it checked, rather than assuming a separate headless-shell package. Download or antivirus failures can leave an incomplete browser cache.
+- **faster-whisper / `av` fails to install.** Use the Python selected by the installer in `python.txt` and `.venv`, rather than an unrelated system Python. The project is verified with Python 3.12; dependency wheel availability varies by interpreter/platform.
 - **Setup shows "Animation kit: missing"** when the app is started from the repo folder: update to the latest version. Run the installer beside the launcher to provision the local studio kit.
 - **"Log in to Claude" opens a window that says the program isn't recognized**: fixed in the latest version. Update `app\studio_gui.py`.
 - **Claude says "Not logged in"**: use **Setup → Log in to Claude**, choose *Claude account with subscription*, and sign in in the browser.
@@ -86,7 +90,7 @@ Go to **Upload → YouTube setup** and follow the steps there. You create a free
 ## Portable configuration
 The launcher copies missing settings, YouTube credentials, work and the kit from the old `%USERPROFILE%\2D-Animation-Studio` installation on first use, rebasing saved project paths. Existing destination files win. The old installation is retained as a backup; use this folder's launcher going forward.
 
-AI logins are scoped to this installation (`.claude`, `.codex`, `.runtime/home/.gemini`); sign in again from Setup. Existing personal AI configurations are not moved or overwritten. Cache and CLI path variables apply only to the studio's processes, with no `setx` or Windows environment changes. Shared prerequisite programs (Python, Node, Git, FFmpeg and installed browsers) may still be used; new Python dependencies and npm AI packages install locally. Secrets and generated content are gitignored.
+AI CLI logins are installation-scoped (`.claude`, `.codex`, `.runtime/home/.gemini`); sign in again from Setup. Existing personal AI configurations are not moved or overwritten. Studio cache/CLI path changes are process-local. Ollama uses its own installed service/model storage; optional Ollama server environment settings are separate and apply to that server globally. Shared Python, Node, Git, FFmpeg and installed browsers may be used; studio dependencies/caches remain local. Secrets and generated content are gitignored.
 
 Gemini installation explicitly permits only `@github/keytar` install scripts for that npm command (`--allow-scripts=@github/keytar`), without changing your Windows or user npm configuration. Its deprecation warning may still appear because it is an upstream dependency. A completed package installation with exit code zero is treated as success; use Setup to sign in afterwards.
 
@@ -115,6 +119,12 @@ code are reused after a stopped run. Changed narration, visual choices or code i
 the affected checkpoints. Contact sheets still need human visual review: the text-only
 model cannot approve images. Runtime validation does not establish visual quality.
 
+Approved/manual scenes are protected: changes to aspect ratio, style or look notes stop
+reuse and preserve the previous config and source until the scenes are reviewed/reframed
+(or a new project is used). Performance reports cover setup, alignment and storyboard
+failures as well as generation/export, including status, stage and failure/cancellation.
+Ollama streaming has a cancellation monitor that can interrupt stalled headers/token reads.
+
 Optional `.env` settings: `OLLAMA_THINKING=low`, `OLLAMA_ANIMATION_THINKING=medium`,
 `OLLAMA_REPAIR_THINKING=medium`, `OLLAMA_SCENE_CONTEXT=16384`.
 `build/ollama_performance.json` records request token counts, load/generation durations,
@@ -130,11 +140,14 @@ and may affect output; compare a successful video before assuming a speed improv
 ## Check and improve offline scenes
 
 Restart the studio after updating. Every automatic offline animation now runs the local
-scene checker before final export. It samples 12%, 50% and 88% of each shot, catches runtime
-errors, and measures very low motion or nearly empty action areas without counting captions.
+scene checker before final export. It draws every frame for runtime checks and captures up
+to eight snapshots per shot for motion/detail checks, without counting captions. It aligns
+frames for translation/zoom before measuring residual motion, reducing camera-only false passes.
 Flagged scenes get one targeted local-model repair attempt, Node syntax checking and another
-real browser audit. Replacements that introduce runtime errors or fail to improve the flagged
-measurement are rolled back. Originals are saved under `build/scene_audit/backups/`.
+real browser audit. A replacement must clear all audit warnings, residual motion >=0.008 and
+color spread >=9, not merely improve slightly. Rejected changes are rolled back. Remaining
+warnings on generated scenes stop repair/export for review; approved/manual scenes stay protected
+from quality-heuristic rewrites. Originals are saved under `build/scene_audit/backups/`.
 
 For existing offline projects, double-click `Check-Offline-Animations.cmd`, or run:
 
@@ -148,11 +161,23 @@ test projects are excluded. Without `--repair` the command only audits. `--expor
 rerenders and remixes the final video; repairs alone do not change an already exported MP4.
 Use `--model` to override the project's recorded model. No cloud services are used.
 
-Reports and three preview images per shot are saved under `build/scene_audit/`. Scenes marked
+Reports and up to eight preview images per shot are saved under `build/scene_audit/`. Scenes marked
 `manual` in the checkpoint are checked but never automatically rewritten. This preserves
 hand-directed and user-approved work. The checker cannot judge beauty, narrative relevance,
 physical contact or animation quality as a human can; camera motion may pass its pixel test.
 Reports always retain `visually_approved: false`. Inspect the images/video yourself.
+
+## Validation
+
+Run checks from the project root:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s app -p "test_*.py"
+node --test app\video_encoder.test.mjs app\offline_motion.test.mjs
+git diff --check
+```
+
+Latest validation: **115 Python tests and 6 Node tests pass**. A real approved-project audit checked 1,624 frames and 120 snapshots with no runtime failures or visual flags. Tests include stalled-stream cancellation, repair rollback/thresholds, approved-scene protection and early failure reporting. These checks do not guarantee visual quality for every new generation.
 
 ## License
 

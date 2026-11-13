@@ -1,17 +1,22 @@
 """Local AI through Ollama: works with no internet and no provider credits.
 
-Ideas and scripts are one streamed chat request to the local Ollama server. Animation needs an
-agent that writes files and runs the render kit, so the Claude Code CLI is pointed at Ollama's
-Anthropic-compatible endpoint instead of Anthropic's servers (see claude_env).
+Ideas/scripts and automatic animation use cancellable local API streams. The automatic
+pipeline in local_animation owns scene files, rendering and export. Optional tool-based
+agent operations retain the Claude Code/Ollama bridge (see claude_env).
 """
 import json
+import http.client
 import os
+import queue
 import re
 import shutil
 import subprocess
+import socket
+import threading
 import time
 import urllib.error
 import urllib.request
+import urllib.parse
 from pathlib import Path
 
 OLLAMA = "Ollama (offline)"
@@ -126,8 +131,82 @@ def pull(model, env=None, on_progress=None):
         raise RuntimeError(f"Ollama could not download {model}: {_error_text(exc)}") from exc
 
 
+def _chat_events(payload, env, check_cancel, idle_callback=None):
+    """Keep cancellation responsive even while connecting or awaiting headers/tokens."""
+    url = urllib.parse.urlsplit(base_url(env) + '/api/chat')
+    connection_type = http.client.HTTPSConnection if url.scheme == 'https' else http.client.HTTPConnection
+    connection = connection_type(url.hostname, url.port, timeout=900)
+    events, stopped = queue.Queue(maxsize=16), threading.Event()
+    stream_socket = [None]
+
+    def publish(kind, value):
+        while not stopped.is_set():
+            try:
+                events.put((kind, value), timeout=.1)
+                return
+            except queue.Full:
+                pass
+
+    def read():
+        try:
+            if stopped.is_set():
+                return
+            connection.request('POST', url.path + ('?' + url.query if url.query else ''),
+                               body=json.dumps(payload).encode('utf-8'),
+                               headers={'Content-Type': 'application/json'})
+            stream_socket[0] = connection.sock
+            if stopped.is_set():
+                return
+            reply = connection.getresponse()
+            if reply.status >= 400:
+                body = reply.read().decode('utf-8', 'replace')
+                try:
+                    detail = json.loads(body).get('error') or body
+                except ValueError:
+                    detail = body or reply.reason
+                raise RuntimeError('Ollama failed: ' + str(detail))
+            for raw in reply:
+                if stopped.is_set():
+                    return
+                publish('event', json.loads(raw or b'{}'))
+            publish('end', None)
+        except Exception as exc:
+            publish('error', exc)
+        finally:
+            connection.close()
+
+    reader = threading.Thread(target=read, name='ollama-stream', daemon=True)
+    reader.start()
+    try:
+        while True:
+            if check_cancel:
+                check_cancel()
+            try:
+                kind, value = events.get(timeout=.1)
+            except queue.Empty:
+                if idle_callback:
+                    idle_callback('')
+                continue
+            if kind == 'end':
+                break
+            if kind == 'error':
+                raise value
+            yield value
+    finally:
+        stopped.set()
+        # shutdown interrupts getresponse()/readline(), including a server that
+        # has sent no headers yet. Do not wait for a blocking response.close().
+        active_socket = connection.sock or stream_socket[0]
+        if active_socket is not None:
+            try:
+                active_socket.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+        reader.join(timeout=.2)
+
+
 def text(prompt, *, model="", env=None, on_text=None, context=TEXT_CONTEXT,
-         thinking=None, response_format=None, on_metrics=None):
+         thinking=None, response_format=None, on_metrics=None, check_cancel=None):
     """One chat answer from the local model, streamed to on_text piece by piece."""
     ensure_running(env)
     name = pick_model(model, env)
@@ -146,9 +225,9 @@ def text(prompt, *, model="", env=None, on_text=None, context=TEXT_CONTEXT,
     for attempt in range(EMPTY_RETRIES + 1):
         pieces, reasoning, reason = [], 0, ""
         try:
-            with _open("/api/chat", payload, env, timeout=900) as reply:   # the first token can take minutes on a CPU
-                for raw in reply:
-                    event = json.loads(raw or b"{}")
+            events = _chat_events(payload, env, check_cancel, on_text if check_cancel is None else None)
+            try:
+                for event in events:
                     if event.get("error"):
                         raise RuntimeError(f"Ollama failed: {event['error']}")
                     if event.get('done') and on_metrics:
@@ -165,6 +244,8 @@ def text(prompt, *, model="", env=None, on_text=None, context=TEXT_CONTEXT,
                         pieces.append(piece)
                         if on_text:
                             on_text(piece)
+            finally:
+                events.close()
         except (urllib.error.URLError, OSError) as exc:
             raise RuntimeError(f"Ollama failed: {_error_text(exc)}") from exc
         answer = re.sub(r"<think>.*?</think>", "", "".join(pieces), flags=re.S).strip()

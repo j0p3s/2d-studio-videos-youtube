@@ -1,5 +1,6 @@
 import json
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -135,6 +136,42 @@ class OllamaTests(unittest.TestCase):
     def test_stopped_server_is_reported_as_not_running(self):
         self.assertFalse(ollama.is_running({"OLLAMA_HOST": "127.0.0.1:9"}))
         self.assertEqual(ollama.base_url({"OLLAMA_HOST": "0.0.0.0:11434"}), "http://127.0.0.1:11434")
+
+
+class StreamCancellationTests(unittest.TestCase):
+    def test_stop_interrupts_stalled_headers_and_stalled_token_reads(self):
+        for headers in (False, True):
+            with self.subTest(headers=headers):
+                waiting, release = threading.Event(), threading.Event()
+                class StalledServer(BaseHTTPRequestHandler):
+                    def log_message(self, *args):
+                        pass
+                    def do_POST(self):
+                        self.rfile.read(int(self.headers['Content-Length']))
+                        if headers:
+                            self.send_response(200)
+                            self.end_headers()
+                            self.wfile.flush()
+                        waiting.set()
+                        release.wait(5)
+                server=ThreadingHTTPServer(('127.0.0.1',0),StalledServer)
+                server.daemon_threads=True
+                worker=threading.Thread(target=server.serve_forever,daemon=True)
+                worker.start()
+                started=time.monotonic()
+                def cancel():
+                    if waiting.is_set():
+                        raise RuntimeError('Stopped.')
+                    if time.monotonic()-started>3:
+                        self.fail('Test server did not start')
+                try:
+                    stream=ollama._chat_events({'model':'test'},
+                        {'OLLAMA_HOST':f'127.0.0.1:{server.server_port}'},cancel)
+                    with self.assertRaisesRegex(RuntimeError,'Stopped.'):
+                        list(stream)
+                    self.assertLess(time.monotonic()-started,1.5)
+                finally:
+                    release.set();server.shutdown();server.server_close();worker.join(1)
 
 
 class PiperVoiceTests(unittest.TestCase):

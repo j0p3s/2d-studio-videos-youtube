@@ -184,6 +184,7 @@ class LocalAnimation:
                    'p.length, [...p] or destructure the whole pose as an array. '
                    'Do not double-escape the JSON code field. Use standard JSON encoding once.')
         return ollama_provider.text(prompt, model=self.model, env=self.env, on_text=progress,
+                                    check_cancel=self.check_cancel,
                                     context=int(self.env.get('OLLAMA_SCENE_CONTEXT', '16384')),
                                     thinking=self.env.get('OLLAMA_REPAIR_THINKING', 'medium') if repair else
                                              self.env.get('OLLAMA_ANIMATION_THINKING', 'medium'),
@@ -200,9 +201,34 @@ class LocalAnimation:
                 error = '\nCorrect this planning problem: ' + str(exc)
         raise RuntimeError('Ollama could not produce a varied, complete storyboard: ' + error)
 
-    def execute(self, *, voice, script, title, aspect, resolution, style, captions,
-                music=True, music_file=None, sfx=True, look=''):
+    def execute(self, **options):
         started = time.monotonic()
+        self.metrics = []
+        self.stage = 'initializing'
+        status, error, output = 'failed', None, None
+        try:
+            output = self._execute(**options)
+            status = 'complete'
+            return output
+        except BaseException as exc:
+            error = str(exc)
+            status = 'cancelled' if error == 'Stopped.' or isinstance(exc, KeyboardInterrupt) else 'failed'
+            raise
+        finally:
+            try:
+                save_json(self.host.project / 'build/ollama_performance.json',
+                          {'model': self.model, 'elapsed_seconds': round(time.monotonic() - started, 2),
+                           'status': status, 'stage': self.stage, 'error': error, 'output': output,
+                           'requests': self.metrics})
+            except OSError as report_error:
+                # Preserve the original exception if reporting fails too.
+                self.log('Could not save performance report: ' + str(report_error))
+                if error is None:
+                    raise
+
+    def _execute(self, *, voice, script, title, aspect, resolution, style, captions,
+                music=True, music_file=None, sfx=True, look=''):
+        self.check_cancel()
         p = self.host.project
         p.mkdir(parents=True, exist_ok=True)
         voice, script = Path(voice).resolve(), Path(script).resolve()
@@ -214,6 +240,17 @@ class LocalAnimation:
             saved = {}
         same_input = saved.get('input') == identity
         cfg_path = p / 'config.json'
+        old_cfg = json.loads(cfg_path.read_text(encoding='utf-8')) if cfg_path.exists() else {}
+        visual_settings = {'aspect': aspect, 'style': style if style != 'auto' else 'emerald', 'look': look}
+        approved_settings = saved.get('visual_settings') or {
+            'aspect': old_cfg.get('aspect', aspect), 'style': old_cfg.get('style', visual_settings['style']),
+            'look': saved.get('look', '')}
+        has_manual = any(item.get('manual') for item in saved.get('complete', {}).values())
+        if same_input and has_manual and visual_settings != approved_settings:
+            raise RuntimeError('Approved scenes need review for the changed aspect, style or look notes. '
+                               'Their source and previous configuration were preserved. Use a new project '
+                               'for this visual direction, or review/reframe the approved scenes first.')
+        self.stage = 'project_setup'
         if not same_input or not cfg_path.is_file():
             self.log('Preparing project and aligning narration (app-managed).')
             self.host.invoke([str(self.host.python), 'tools/new_project.py', '--name', p.name,
@@ -228,9 +265,11 @@ class LocalAnimation:
             cfg['music']['file'] = str(Path(music_file).resolve())
         save_json(cfg_path, cfg)
         if not same_input or not (p / 'timeline/words.json').is_file():
+            self.stage = 'alignment'
             self.host.invoke([str(self.host.python), 'tools/transcribe.py', '--project', str(p),
                               '--script', str(script), '--lang', 'en'])
         if not same_input or not (p / 'story/shots.json').is_file():
+            self.stage = 'beat_plan'
             self.host.invoke([str(self.host.python), 'tools/beats.py', '--project', str(p), '--force'])
         plan_path = p / 'story/shots.json'
         story = json.loads(plan_path.read_text(encoding='utf-8'))
@@ -238,8 +277,7 @@ class LocalAnimation:
         # Plan the film together, then generate code in bounded per-shot requests.
         style_key = json.dumps([cfg['style'], aspect, look, self.model, SCENE_GUIDE])
         complete = saved.get('complete', {}) if same_input else {}
-        state = {'input': identity, 'complete': complete}
-        save_json(state_file, state)
+        state = {'input': identity, 'complete': complete, 'visual_settings': visual_settings}
         synopsis = script.read_text(encoding='utf-8')[:6000]
         direction_key = hashlib.sha256((identity + style_key + PLAN_GUIDE).encode()).hexdigest()
         manual = all(complete.get(s['id'], {}).get('manual') for s in shots)
@@ -248,6 +286,7 @@ class LocalAnimation:
         elif same_input and saved.get('direction_key') == direction_key:
             directions = saved['directions']
         else:
+            self.stage = 'storyboard'
             self.log('Planning narrative action, camera variety and visual continuity before scene generation.')
             directions = self.plan_story(shots, synopsis, cfg['style'], look)
         state.update(direction_key=direction_key, directions=directions)
@@ -306,29 +345,28 @@ class LocalAnimation:
                     error = str(exc)
             raise RuntimeError(f'Ollama could not build {sid} after 3 attempts: {error}')
 
-        try:
-            for shot in shots:
-                self.check_cancel()
-                generate(shot)
-            for attempt in range(3):
-                try:
-                    ollama_provider.release_model(self.model, self.env)
-                    self.host.invoke(['node', 'render.mjs', '--project', str(p), '--sheet', '--scale', '0.5'], render=True)
-                    break
-                except RuntimeError as exc:
-                    if str(exc) == 'Stopped.' or attempt == 2:
-                        raise
-                    failed = [s for s in shots if re.search(r'\b' + re.escape(s['id']) + r'\b', str(exc))]
-                    if not failed:
-                        raise  # Browser/setup failures cannot be repaired by rewriting scenes.
-                    for shot in failed:
-                        generate(shot, str(exc))
-            self.log('Scene runtime checks passed. Contact sheets are saved for visual review.')
-            from check_offline_scenes import check_project
-            check_project(self.host, request=self.request, log=self.log)
-            ollama_provider.release_model(self.model, self.env)
-            return self.host.export(float(story['duration']))
-        finally:
-            save_json(p / 'build/ollama_performance.json',
-                      {'model': self.model, 'elapsed_seconds': round(time.monotonic() - started, 2),
-                       'requests': self.metrics})
+        self.stage = 'scene_generation'
+        for shot in shots:
+            self.check_cancel()
+            generate(shot)
+        self.stage = 'runtime_checks'
+        for attempt in range(3):
+            try:
+                ollama_provider.release_model(self.model, self.env)
+                self.host.invoke(['node', 'render.mjs', '--project', str(p), '--sheet', '--scale', '0.5'], render=True)
+                break
+            except RuntimeError as exc:
+                if str(exc) == 'Stopped.' or attempt == 2:
+                    raise
+                failed = [s for s in shots if re.search(r'\b' + re.escape(s['id']) + r'\b', str(exc))]
+                if not failed:
+                    raise  # Browser/setup failures cannot be repaired by rewriting scenes.
+                for shot in failed:
+                    generate(shot, str(exc))
+        self.log('Scene runtime checks passed. Contact sheets are saved for visual review.')
+        from check_offline_scenes import check_project
+        self.stage = 'scene_audit'
+        check_project(self.host, request=self.request, log=self.log)
+        ollama_provider.release_model(self.model, self.env)
+        self.stage = 'export'
+        return self.host.export(float(story['duration']))

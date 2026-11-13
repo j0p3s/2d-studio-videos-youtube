@@ -10,14 +10,20 @@ from check_offline_scenes import accept_repair, check_project
 class OfflineSceneAuditTests(unittest.TestCase):
     def result(self, motion=.001, errors=None):
         return {'id':'s001','motion_ratio':motion,'color_spread':40,
-                'runtime_errors':errors or [],'missing':False,'issues':['Little motion']}
+                'runtime_errors':errors or [],'missing':False,
+                'issues':(errors or []) + (['Little motion'] if motion<.008 else [])}
 
     def test_repair_must_improve_flagged_motion_without_adding_runtime_errors(self):
         before = self.result()
         self.assertFalse(accept_repair(before,self.result(.001)))
         self.assertFalse(accept_repair(before,self.result(.2,['Broken pose'])))
         self.assertTrue(accept_repair(before,self.result(.2)))
-        self.assertTrue(accept_repair(self.result(errors=['Broken pose']),self.result()))
+        self.assertTrue(accept_repair(self.result(errors=['Broken pose']),self.result(.2)))
+        self.assertFalse(accept_repair(before,self.result(.002)))
+        self.assertFalse(accept_repair(self.result(.2),self.result(.001)))
+        self.assertFalse(accept_repair(before,dict(self.result(.2),color_spread=5)))
+        # Rounding at the threshold must not override an actual audit warning.
+        self.assertFalse(accept_repair(before,dict(self.result(.008),issues=['Low residual motion'])))
 
     def fixture(self, folder, manual=False):
         root=Path(folder); p=root/'projects/video'
@@ -34,7 +40,9 @@ class OfflineSceneAuditTests(unittest.TestCase):
             response=json.dumps({'scene':'Writes a note','code':"registerShot('s001',{draw(){}})"})
             report={'shots':[self.result()]}
             with patch('check_offline_scenes.audit',return_value=report):
-                result=check_project(host,request=lambda *args,**kwargs:response,log=lambda _:None)
+                with self.assertRaisesRegex(RuntimeError, 'still needs review'):
+                    check_project(host,request=lambda *args,**kwargs:response,log=lambda _:None)
+            result=json.loads((host.project/'build/scene_audit/report.json').read_text())
             self.assertEqual(source.read_text(),'original source')
             self.assertEqual(result['decisions'][0]['status'],'reverted_no_measured_improvement')
             self.assertFalse(result['visually_approved'])

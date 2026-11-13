@@ -71,6 +71,17 @@ class LocalAnimationTests(unittest.TestCase):
                 animation.execute(**args)
                 self.assertEqual(request.call_count, 2)
                 self.assertTrue((project / 'build/ollama_performance.json').exists())
+                # Approved geometry must not silently survive a new aspect ratio.
+                state_path=project/'build/local_animation.json'
+                state=json.loads(state_path.read_text())
+                state['complete']['s001']['manual']=True
+                state_path.write_text(json.dumps(state))
+                config_before=(project/'config.json').read_bytes()
+                for changed in ({'aspect':'16:9'}, {'style':'ember'}, {'look':'Different costume'}):
+                    with self.subTest(changed=changed), self.assertRaisesRegex(RuntimeError,'Approved scenes need review'):
+                        animation.execute(**dict(args,**changed))
+                self.assertEqual((project/'config.json').read_bytes(),config_before)
+                self.assertEqual(request.call_count,2)
 
     def test_malformed_responses_stop_after_three_attempts_without_export(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -108,6 +119,68 @@ class LocalAnimationTests(unittest.TestCase):
         items[2]['end_state'] = items[2]['start_state']
         with self.assertRaisesRegex(ValueError, 'different start and end'):
             validate_storyboard(json.dumps({'shots': items}), shots)
+
+    def test_setup_failure_saves_timing_and_original_error(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder); voice=root/'voice.mp3';script=root/'script.txt'
+            voice.write_bytes(b'x');script.write_text('Start work.')
+            animation=LocalAnimation(root,'video','python',lambda cmd:(1,'setup failed'),{},'',lambda:None,lambda _:None)
+            with self.assertRaisesRegex(RuntimeError,'setup failed'):
+                animation.execute(voice=voice,script=script,title='Video',aspect='9:16',
+                                  resolution='720p',style='emerald',captions=True)
+            report=json.loads((root/'projects/video/build/ollama_performance.json').read_text())
+            self.assertEqual(report['status'],'failed')
+            self.assertEqual(report['stage'],'project_setup')
+            self.assertIn('setup failed',report['error'])
+
+    def test_storyboard_failure_keeps_checkpoint_and_records_stage(self):
+        with tempfile.TemporaryDirectory() as folder:
+            import hashlib
+            root=Path(folder);p=root/'projects/video'
+            for rel in ('build','story','timeline'):(p/rel).mkdir(parents=True,exist_ok=True)
+            voice=root/'voice.mp3';script=root/'script.txt';voice.write_bytes(b'x');script.write_text('x')
+            state={'input':hashlib.sha256(b'xx').hexdigest(),'complete':{},'direction_key':'old',
+                   'directions':{'s001':{'action':'Existing storyboard'}}}
+            checkpoint=p/'build/local_animation.json';checkpoint.write_text(json.dumps(state))
+            (p/'config.json').write_text('{}');(p/'timeline/words.json').write_text('{}')
+            (p/'story/shots.json').write_text(json.dumps({'duration':4,'shots':[
+                {'id':'s001','start':0,'end':4,'line':'x','scene':'TODO'}]}))
+            animation=LocalAnimation(root,'video','python',lambda cmd:(0,''),{},'',lambda:None,lambda _:None)
+            with patch.object(animation,'plan_story',side_effect=RuntimeError('planning failed')):
+                with self.assertRaisesRegex(RuntimeError,'planning failed'):
+                    animation.execute(voice=voice,script=script,title='Video',aspect='9:16',
+                                      resolution='720p',style='emerald',captions=True)
+            self.assertEqual(json.loads(checkpoint.read_text()),state)
+            report=json.loads((p/'build/ollama_performance.json').read_text())
+            self.assertEqual((report['status'],report['stage']),('failed','storyboard'))
+
+    def test_alignment_failure_is_included_in_performance_report(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder); p=root/'projects/video'
+            voice=root/'voice.mp3';script=root/'script.txt';voice.write_bytes(b'x');script.write_text('x')
+            def run(cmd):
+                if 'tools/new_project.py' in cmd:
+                    (p/'config.json').write_text('{}')
+                    return 0,''
+                return 1,'alignment failed'
+            animation=LocalAnimation(root,'video','python',run,{},'',lambda:None,lambda _:None)
+            with self.assertRaisesRegex(RuntimeError,'alignment failed'):
+                animation.execute(voice=voice,script=script,title='Video',aspect='9:16',
+                                  resolution='720p',style='emerald',captions=True)
+            report=json.loads((p/'build/ollama_performance.json').read_text())
+            self.assertEqual((report['status'],report['stage']),('failed','alignment'))
+
+    def test_early_cancellation_is_recorded_without_reading_inputs(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            def cancel():
+                raise RuntimeError('Stopped.')
+            animation=LocalAnimation(root,'video','python',lambda cmd:(0,''),{},'',cancel,lambda _:None)
+            with self.assertRaisesRegex(RuntimeError,'Stopped.'):
+                animation.execute(voice='absent',script='absent',title='Video',aspect='9:16',
+                                  resolution='720p',style='emerald',captions=True)
+            report=json.loads((root/'projects/video/build/ollama_performance.json').read_text())
+            self.assertEqual(report['status'],'cancelled')
 
 
 if __name__ == '__main__':

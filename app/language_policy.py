@@ -1,4 +1,4 @@
-"""English output and Microsoft Neural speech, independent of the AI provider."""
+"""English output and Piper/Qwen3/Edge voice selection, independent of AI provider."""
 import hashlib
 
 ENGLISH_POLICY = (

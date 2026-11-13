@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
 import {createRequire} from 'node:module';
+import {motionMetrics} from './offline_motion.mjs';
 const [studioArg, projectArg] = process.argv.slice(2);
 const studio=path.resolve(studioArg), project=path.resolve(projectArg);
 const {chromium}=createRequire(path.join(studio,'package.json'))('playwright');
@@ -40,8 +41,18 @@ try{
  const results=[];
  for(const shot of shots){
   const samples=[];
-  for(const fraction of [.12,.5,.88]){
-   const time=shot.start+(shot.end-shot.start)*fraction;
+  const first=Math.max(0,Math.ceil(shot.start*fps)),last=Math.max(first,Math.ceil(shot.end*fps)-1);
+  const sampleFrames=[...new Set([.05,.18,.31,.44,.57,.70,.83,.95].map(f=>Math.round(first+(last-first)*f)))];
+  // Every output frame is drawn, not only the snapshots used for motion metrics.
+  // Small chunks keep each browser evaluation bounded and process cancellation responsive.
+  let next=first;
+  for(const frame of sampleFrames){
+   while(next<=frame){
+    const end=Math.min(frame,next+23);
+    await page.evaluate(({from,to})=>{for(let f=from;f<=to;f++)window.renderFrame(f)},{from:next,to:end});
+    next=end+1;
+   }
+   const time=frame/fps;
    const sample=await page.evaluate(({frame})=>{
     window.renderFrame(frame);
     const c=document.querySelector('#main'),ctx=c.getContext('2d');
@@ -52,22 +63,35 @@ try{
      const i=(py*c.width+px)*4;pixels.push(data[i],data[i+1],data[i+2]);
     }
     return {pixels,errors:[...window.ERRORS]};
-   },{frame:Math.round(time*fps)});
-   const image=path.join(folder,`${shot.id}_${fraction}.png`);await page.screenshot({path:image});
+   },{frame});
+   const image=path.join(folder,`${shot.id}_${frame}.png`);await page.screenshot({path:image});
    samples.push({...sample,time,image});
   }
-  const diff=(a,b)=>{let changed=0;for(let i=0;i<a.length;i+=3)if(Math.max(Math.abs(a[i]-b[i]),Math.abs(a[i+1]-b[i+1]),Math.abs(a[i+2]-b[i+2]))>18)changed++;return changed/(a.length/3)};
-  const motion=Math.max(diff(samples[0].pixels,samples[1].pixels),diff(samples[1].pixels,samples[2].pixels));
-  const pixels=samples[1].pixels;let mean=pixels.reduce((a,b)=>a+b,0)/pixels.length;
+  while(next<=last){
+   const end=Math.min(last,next+23);
+   await page.evaluate(({from,to})=>{for(let f=from;f<=to;f++)window.renderFrame(f)},{from:next,to:end});
+   next=end+1;
+  }
+  const changes=samples.slice(1).map((s,i)=>motionMetrics(samples[i].pixels,s.pixels));
+  const motion=Math.max(0,...changes.map(x=>x.residual)),rawMotion=Math.max(0,...changes.map(x=>x.raw));
+  const pixels=samples[Math.floor(samples.length/2)].pixels;let mean=pixels.reduce((a,b)=>a+b,0)/pixels.length;
   const spread=Math.sqrt(pixels.reduce((a,b)=>a+(b-mean)**2,0)/pixels.length);
   const errors=[...new Set(samples.flatMap(s=>s.errors).filter(e=>e.includes(shot.id)))];
   const issues=[];if(!shot.ok)issues.push('Missing scene module');if(errors.length)issues.push(...errors);
-  if(motion<.008)issues.push('Very little visible change in action area across three sampled moments');
+  if(motion<.008)issues.push('Very little residual motion in action area after compensating for camera movement');
   if(spread<9)issues.push('Action area is nearly uniform; subject or scene detail may be absent');
-  results.push({id:shot.id,motion_ratio:+motion.toFixed(4),color_spread:+spread.toFixed(2),issues,
+  results.push({id:shot.id,motion_ratio:+motion.toFixed(4),raw_motion_ratio:+rawMotion.toFixed(4),color_spread:+spread.toFixed(2),issues,
+   frames_checked:last-first+1,sample_times:samples.map(s=>s.time),
    runtime_errors:errors,missing:!shot.ok,images:samples.map(s=>s.image)});
  }
+ const allErrors=await page.evaluate(()=>[...window.ERRORS]);
+ for(const result of results){
+  for(const error of allErrors.filter(e=>e.includes(result.id))){
+   if(!result.runtime_errors.includes(error))result.runtime_errors.push(error);
+   if(!result.issues.includes(error))result.issues.push(error);
+  }
+ }
  console.log('OFFLINE_AUDIT_JSON:'+JSON.stringify({shots:results,page_errors:pageErrors,
-  limitation:'Sampled runtime and pixel checks cannot establish semantic relevance or visual quality. Camera movement may pass motion checks without character action.'}));
+  limitation:'All-frame runtime checks and camera-compensated snapshot metrics cannot establish semantic relevance, contact or visual quality. Human review is still required.'}));
 }catch(e){console.error('AUDIT FAILED:',e.message);process.exitCode=1}
 finally{if(browser)await browser.close();await new Promise(r=>server.close(r))}
