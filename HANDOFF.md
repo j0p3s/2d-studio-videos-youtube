@@ -5,6 +5,11 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
 
 ## Project and publication
 
+- Model-upload protection: `.gitignore` excludes `models/` and `Models/` at any depth,
+  common model weight extensions and partial safetensors/GGUF downloads, in addition
+  to the existing portable-runtime exclusions. Verified no model folders or weights
+  were tracked before this update. Models remain local; none were moved or uploaded.
+
 - Current integration update (2026-11-13): Studio now offers **CastWorkshop (local)** as
   animation-only provider, including Auto and a **Shorts 15s test** script option. Setup
   has root/loopback URL fields plus check/finish-setup actions. It uses the installed

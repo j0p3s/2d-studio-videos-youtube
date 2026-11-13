@@ -32,6 +32,19 @@ Android-App/
 # Local scene-check dashboards and copied previews
 /reports/
 
+# Local model libraries at any depth, including future relocations into Studio
+models/
+Models/
+*.safetensors
+*.gguf
+*.ckpt
+*.onnx
+*.pt
+*.pth
+pytorch_model*.bin
+*.safetensors.part*
+*.gguf.part*
+
 # Portable CastWorkshop runtime, private configuration and downloaded assets
 /integrations/castworkshop/apps/
 /integrations/castworkshop/runtime/
