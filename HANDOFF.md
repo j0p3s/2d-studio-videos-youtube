@@ -136,6 +136,25 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
   the window opens centered on the screen (corrected for title bar/borders and DPI). Restart the GUI to load these.
 - Commits on `main` after `820e817`: `1685af6` info.t, `1115509` prompt/audit threshold 0.02, `82514b3` handoff,
   `2d2e868` status bar, `019dc9e` window centering, `5c34e44` repair retries, `672a2ad` rig imports, `0a73211` sentence-text check.
+- 2026-11-14 test run, Claude `claude-sonnet-5-5` at medium effort as animation provider, Ollama as script provider
+  (`the-3-minute-habit-hack-that-guarantees-11140120`, Shorts 15s test, 9:16, 720p, emerald): finished with no errors,
+  45.02 s, 20 shots, audio and video; the user called the first run 'cool'. The second run was reported 'broken'; frames
+  showed a smaller set of faults, and the causes were traced and fixed (nothing was repaired in that project):
+  1. Lying figures floated: `drawFigure` rotates around the HIP, so y is not the feet; s001 floated 170 units above
+     the mattress. New `restOn(fig, surfaceY)` / `surfaceGap` / `figureLowest` in `app/rig_safety.mjs`, exported from
+     `rig2d.js` by `patch_rig.py` (re-run on every setup and applied to the local studio). Rules added to the offline
+     prompt and to new `app/shot_rules.py`, which `_facts` appends to the Claude/Codex animation prompt.
+     Verified by rendering a scratch still: the sleeper lies on the bed. No automatic check flags floating figures yet.
+  2. Empty description/tags/thumbnail text: Ollama scripts often lack the `===META===` block, so `meta` was `{}`.
+     `app/youtube_meta.py` `complete_meta` keeps the model's values and builds the rest from title and narration.
+  3. Weak thumbnail: Auto always used 35% of the video (a dark 'STEP 2' text shot). `app/thumb_pick.py` scores
+     sampled frames; Auto uses the best one, and a new Best frame button sets the slider. On the run above it picks
+     31.2 s (character in golden light). Burned-in captions can still appear in the thumbnail.
+  4. The scene audit only ran in the Ollama path. `_audit_agent_project` now runs it report-only after Claude-built
+     videos (never blocks, writes `build/scene_audit/report.json`). On that project it flagged s005/s016 (low motion)
+     and did not flag the floating sleeper, so contact-sheet review still matters.
+  Not changed: the dark, near-static title card (s002) is a design choice in the shot code. None of these fixes has
+  been tried in a new end-to-end GUI run yet; restart the GUI to load them.
 - Next: run Auto on another new video and view real frames (a tool hook may block large images; small JPEGs and the
   built-in browser worked). If scenes stay weak, consider a stronger audit for cropped props/missing character, or hand-built
   scene templates for common beats (waking, writing at a desk, holding a timer) that the prompt can reference.
@@ -324,7 +343,7 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
 ## Validation and remaining limits
 
 - 2026-11-14: the full Python suite (`python -m unittest discover -p "test_*.py"` in `app`, studio `.venv`) passed:
-  **177 tests**, after the Effort dropdown and model suggestions.
+  **193 tests** (and 41 Node tests), after the 2026-11-14 fixes below.
 - Last full-suite baseline: **149 Python tests and 16 Node tests passed** before the
   latest portable-import additions. Latest targeted portable suite: **13/13 pass**,
   including cache skipping, required-file permission failures, partial/manual-copy

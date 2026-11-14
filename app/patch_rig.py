@@ -20,6 +20,13 @@ def patch_rig(studio):
         source=source.replace(signature,signature+"\n  assertPose(o.pose || POSES.stand);\n  if (![o.x,o.y,o.s??1,o.facing??1,o.rot??0].every(Number.isFinite)) throw new TypeError('Non-finite figure transform');")
         source=source.replace('d = Math.min(d, L1 + L2 - 0.01);','d = Math.max(0.001, Math.min(d, L1 + L2 - 0.01));')
         path.write_text(source,encoding='utf-8')
+    if 'restOn' not in source:
+        # Lying figures rotate around the hip, so y is not the feet; restOn places the body on a surface.
+        export="export {clonePose, armPose, jointWorld};"
+        if export not in source:
+            raise RuntimeError('Unknown rig export line; refusing to add surface helpers')
+        source=source.replace(export,export+"\nexport {restOn, surfaceGap, figureLowest} from './rig_safety.mjs';",1)
+        path.write_text(source,encoding='utf-8')
     if SKELETON_MARKER not in source:
         # Skeleton poses (rigPose/rigWalk/...) are angle based and solve to the same 11 joints the
         # renderer draws, so drawFigure/headPos accept either representation.

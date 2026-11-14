@@ -45,7 +45,7 @@ need a standing figure. Never repeat a full-body pose just to fill a shot.
 drawFigure(g,{x:E.W*0.45,y:E.H*0.72,s:E.H/420,pose:pose('stand'),expr:'determined',
 outfit:{top:'hoodie',color:'#228c80'}}) draws a properly sized existing character.
 SKELETAL RIG (preferred for every character): also import {rigPose, rigBlend, rigSample,
-rigAdd, rigIdle, rigReach, rigPlant, rigWalk, rigRun, rigWalkSpeed, jointWorld} from '/engine/rig2d.js'
+rigAdd, rigIdle, rigReach, rigPlant, rigWalk, rigRun, rigWalkSpeed, jointWorld, restOn} from '/engine/rig2d.js'
 and pass the result straight to drawFigure as pose. The skeleton has fixed-length bones, so
 a pose can never stretch a limb or bend a joint backwards. rigPose('talk') uses a named pose:
 stand, relaxed, talk, explain, point, crossArms, handsOnHead, cheer, shrug, think, wave,
@@ -89,6 +89,10 @@ color:'#228c80'} consistently. Only add a prop if the storyboard/narration needs
 position to the hand, surface or floor. Never invent drinking/coffee or random walking.
 CRITICAL GEOMETRY: joint coordinates are [x,y] arrays, NEVER {x,y} or joint.x/joint.y.
 Start seated actions from pose('sit'), not a stand pose with only the hip moved.
+LYING FIGURES (sleeping, resting, collapsed): drawFigure rotates around the HIP, so y is not the feet and a
+figure lying with rot:Math.PI/2 floats far above y. Build the options with y:0, then set
+fig.y=restOn(fig,surfaceY) where surfaceY is the top of the mattress, sofa or floor the body touches, and
+draw the bed/sofa from that same surfaceY.
 Keep head-to-shoulder distance about 34, torso about 74, upper/forearms about 35–40
 local units. Move head/shoulders/hips together when changing body height. Never stretch
 an arm across the scene to reach a prop: move the prop or the whole character closer,
@@ -191,7 +195,7 @@ def reject_narration_text(code):
 
 
 RIG_IMPORTS = ('rigPose', 'rigBlend', 'rigSample', 'rigAdd', 'rigIdle', 'rigReach', 'rigPlant',
-               'rigWalk', 'rigRun', 'rigWalkSpeed', 'jointWorld', 'drawFigure')
+               'rigWalk', 'rigRun', 'rigWalkSpeed', 'jointWorld', 'restOn', 'drawFigure')
 
 
 def fix_rig_imports(code):

@@ -20,6 +20,9 @@ import webbrowser
 from ai_providers import PROVIDERS, TEXT_PROVIDERS, cli_command, run_agent, portable_prompt, load_env_file
 from host_render import HostAnimation
 from local_animation import LocalAnimation
+from shot_rules import SHOT_RULES
+from youtube_meta import complete_meta
+from thumb_pick import best_time
 import openart_provider
 import shots_video
 import castworkshop_provider
@@ -1774,6 +1777,9 @@ class Studio(ctk.CTk):
             except Exception:
                 meta = {}
             title = meta.get("title") or fallback_title
+            # Local models often skip or break the META block: fill what is missing so the upload page is never empty.
+            meta = complete_meta(meta, title, narration, f"{self.s.get('niche_sub', '')} {self.s.get('niche_main', '')}", shorts)
+            title = meta["title"]
             if new_video and self.s.get("slug"):
                 # Start a new project. Reusing the old slug made the new video overwrite the old one's
                 # voiceover in work\ and wipe its finished project folder when Animate ran.
@@ -2380,6 +2386,8 @@ state your assumption in one line, and continue until the final MP4 exists.
 - Style: {'render the style grid and pick the best one yourself' if style == 'auto' else style + ' (skip the style-grid checkpoint, set it in config.json)'}
 - Character / look notes from me: {look or 'none - use the style bible defaults'}
 
+{SHOT_RULES}
+
 Follow every golden rule and the style bible. Check the contact sheets yourself before the final render.
 Run long renders in the background and poll the log, so no single command runs longer than 10 minutes.
 When out/<title>.mp4 is muxed and QC'd, finish with one final line exactly like:
@@ -2593,9 +2601,35 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
                 own = STUDIO / "projects" / self.s["slug"] / "out"
                 mp4s = [p for p in own.glob("*.mp4") if p.stat().st_mtime >= t0] if own.is_dir() else []
                 path = str(max(mp4s, key=lambda p: p.stat().st_mtime)) if mp4s else None
+            if path:
+                self._audit_agent_project()
             return path
 
         self.run_job("Making the video", work, self._video_done)
+
+    def _audit_agent_project(self):
+        """Report-only scene audit for projects an AI agent built (the offline path runs it itself).
+
+        It never blocks or changes the video: it logs shots with almost no motion and writes
+        build/scene_audit/report.json beside the project for review.
+        """
+        slug = self.s.get("slug")
+        project = STUDIO / "projects" / (slug or "")
+        if not slug or not project.is_dir():
+            return
+        self.log(self.anim_log, "Scene audit (report only)...")
+        lines = []
+
+        def receive(line):
+            lines.append(line)
+            self.log(self.anim_log, line)
+        try:
+            rc = self.run_cmd([PY, str(APP_DIR / "check_offline_scenes.py"), "--project", str(project)],
+                              cwd=str(STUDIO), on_line=receive)
+            if rc:
+                self.log(self.anim_log, f"Scene audit skipped (exit {rc}); the video is unchanged.")
+        except Exception as exc:
+            self.log(self.anim_log, f"Scene audit skipped: {exc}")
 
     def _video_done(self, path):
         if path:
@@ -2993,6 +3027,8 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
         r5 = ctk.CTkFrame(right, fg_color="transparent")
         r5.pack(fill="x", padx=14, pady=8)
         ctk.CTkButton(r5, text="🖼 Make thumbnail", command=self.make_thumb).pack(side="left")
+        ctk.CTkButton(r5, text="✨ Best frame", width=100, fg_color="#1d222b", hover_color="#272d38",
+                      command=self.best_frame).pack(side="left", padx=(6, 0))
         ctk.CTkButton(r5, text="Browse…", width=80, fg_color="#1d222b", hover_color="#272d38",
                       command=self.pick_thumb).pack(side="left", padx=6)
         self.thumb_path = None
@@ -3043,6 +3079,21 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
         if f:
             self._show_thumb(f)
 
+    def best_frame(self):
+        """Move the slider to the best-looking frame of the chosen video."""
+        video = self.ent_video.get().strip()
+        if not video or not Path(video).exists():
+            messagebox.showinfo("Thumbnail", "Choose the video file first.")
+            return
+
+        def work():
+            r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", video],
+                               capture_output=True, text=True, env=ENV, creationflags=NO_WINDOW)
+            dur = float(r.stdout.strip() or 10)
+            return best_time(video, dur, env=ENV, creationflags=NO_WINDOW) / dur * 100
+
+        self.run_job("Finding the best frame", work, lambda pct: self.sld_frame.set(pct))
+
     def make_thumb(self):
         video = self.ent_video.get().strip()
         if not video or not Path(video).exists():
@@ -3057,9 +3108,17 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
             r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", video],
                                capture_output=True, text=True, env=ENV, creationflags=NO_WINDOW)
             dur = float(r.stdout.strip() or 10)
+            at = dur * pct
+            if self._auto:   # Auto picks the best-looking frame; a manual press keeps the slider position
+                try:
+                    self.prog(0.2, "choosing the best frame")
+                    at = best_time(video, dur, env=ENV, creationflags=NO_WINDOW)
+                    self.after(0, lambda v=at / dur * 100: self.sld_frame.set(v))
+                except Exception as exc:
+                    self.log(self.anim_log, f"Best-frame pick failed ({exc}); using the slider position.")
             frame = out.with_suffix(".frame.png")
             self.prog(0.3, "grabbing the frame")
-            subprocess.run(["ffmpeg", "-y", "-ss", f"{dur * pct:.2f}", "-i", video, "-frames:v", "1", str(frame)],
+            subprocess.run(["ffmpeg", "-y", "-ss", f"{at:.2f}", "-i", video, "-frames:v", "1", str(frame)],
                            capture_output=True, env=ENV, creationflags=NO_WINDOW)
             from PIL import Image, ImageDraw, ImageFont, ImageEnhance
             img = Image.open(frame).convert("RGB")
