@@ -327,10 +327,15 @@ class Studio(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ------------------------------------------------------------------ layout
-    def _recenter(self):
+    def _recenter(self, tries=0):
         """Center the framed window using its real title bar and border sizes (runs once at start)."""
         try:
             self.update_idletasks()
+            # CustomTkinter applies the requested size a moment after start-up. Centering while the
+            # window is still the 200x200 default put it off-center, so wait for the real size.
+            if (self.winfo_width() < 1000 or not self.winfo_viewable()) and tries < 40:
+                self.after(50, lambda: self._recenter(tries + 1))
+                return
             border = max(0, self.winfo_rootx() - self.winfo_x())
             title = max(0, self.winfo_rooty() - self.winfo_y())
             w, h = self.winfo_width() + 2 * border, self.winfo_height() + title + border
