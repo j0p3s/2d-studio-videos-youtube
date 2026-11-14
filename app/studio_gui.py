@@ -28,6 +28,7 @@ from parallel_commands import CommandGroup
 from openart_defaults import migrate_defaults, build_options, RETENTION_BRIEF, DEFAULT_RESOLUTION
 from openart_provider import OPENART
 import session_log
+import lag_probe
 import piper_voice
 import qwen_voice
 import model_choices
@@ -312,6 +313,7 @@ class Studio(ctk.CTk):
         self.apply_offline()
         self._refresh_offline_badge()
         self.after(300, self.check_setup)
+        lag_probe.start(self, session_log.write)   # temporary: logs "LAG" lines when the window freezes
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ------------------------------------------------------------------ layout
