@@ -24,6 +24,7 @@ from shot_rules import SHOT_RULES
 from youtube_meta import complete_meta
 from thumb_pick import best_time
 from project_folder import project_folder
+import duplicate_check
 import openart_provider
 import shots_video
 import castworkshop_provider
@@ -1134,6 +1135,17 @@ class Studio(ctk.CTk):
                     text="720p stills + smooth camera motion; 12s long / 6s Shorts; existing plans resume"
                     ).pack(side="left", padx=12)
         self._openart_economy_controls()
+        row_repeat = ctk.CTkFrame(ai, fg_color="transparent")
+        row_repeat.pack(fill="x", padx=12, pady=5)
+        self.sw_avoid_repeats = ctk.CTkSwitch(row_repeat, text="Avoid repeating my videos (recommended)",
+                                              command=self._save_avoid_repeats)
+        if self.settings.get("avoid_repeats", True):
+            self.sw_avoid_repeats.select()
+        self.sw_avoid_repeats.pack(side="left")
+        ctk.CTkLabel(row_repeat, wraplength=420, justify="left",
+                     text="Before new ideas: read your YouTube channel (if signed in) and local projects, "
+                          "and drop ideas that repeat them"
+                     ).pack(side="left", padx=12)
         buttons_ai = ctk.CTkFrame(ai, fg_color="transparent")
         buttons_ai.pack(fill="x", padx=12, pady=6)
         tools = []
@@ -1240,6 +1252,10 @@ class Studio(ctk.CTk):
         save_settings(self.settings)
         item["box"].set(model or model_choices.DEFAULT)
         self.lbl_models.configure(text=note, text_color=colour)
+
+    def _save_avoid_repeats(self):
+        self.settings["avoid_repeats"] = bool(self.sw_avoid_repeats.get())
+        save_settings(self.settings)
 
     def _save_openart(self, event=None):
         was_economy = self.settings.get("openart_save_credits", True)
@@ -1685,13 +1701,35 @@ class Studio(ctk.CTk):
     def get_ideas(self, more=False):
         main, sub = self._niche()
         avoid = [i["title"] for i in self.ideas] if more else []
-        prompt = (f"{scriptforge_prompt()}\n\n---\nYou are running inside a desktop app, not a chat: skip greetings, "
-                  f"menus and questions. The user picked main niche {main}, sub-niche: {sub}. Do STEP 2 now.\n"
-                  + (f"Do not repeat these titles: {json.dumps(avoid)}\n" if avoid else "")
-                  + 'Return ONLY a JSON array of exactly 10 objects: [{"title": "...", "hook": "...", "format": "listicle|deep-dive|truth-about|countdown|story"}]. No other text.')
+        check = self.settings.get("avoid_repeats", True)
+
+        def build_prompt(existing, extra):
+            return (f"{scriptforge_prompt()}\n\n---\nYou are running inside a desktop app, not a chat: skip greetings, "
+                    f"menus and questions. The user picked main niche {main}, sub-niche: {sub}. Do STEP 2 now.\n"
+                    + (f"Do not repeat these titles: {json.dumps(avoid + extra)}\n" if avoid or extra else "")
+                    + duplicate_check.prompt_line(existing)
+                    + 'Return ONLY a JSON array of exactly 10 objects: [{"title": "...", "hook": "...", "format": "listicle|deep-dive|truth-about|countdown|story"}]. No other text.')
 
         def work():
-            return extract_json(self.ask_ai(prompt, cwd=HOME, expect_chars=1900), "[")
+            existing = []
+            if check:
+                self.prog(None, "checking your videos so nothing repeats")
+                existing, notes = duplicate_check.collect(
+                    [STUDIO / "projects", WORK], lambda: self._yt_service(interactive=False), session_log.write)
+                session_log.write("INFO", "Duplicate check read " + ", ".join(notes))
+            extra = []
+            for attempt in range(3):   # a batch that only repeats old videos is asked for again
+                ideas = extract_json(self.ask_ai(build_prompt(existing, extra), cwd=HOME, expect_chars=1900), "[")
+                if not check:
+                    return ideas
+                kept, dropped = duplicate_check.filter_ideas(ideas, existing + avoid)
+                for idea, match in dropped:
+                    session_log.write("INFO", f"Dropped idea {idea.get('title')!r}: too close to {match!r}")
+                if kept:
+                    return kept
+                extra += [i.get("title", "") for i, _ in dropped]
+            raise RuntimeError("Every new idea repeated a video you already have. "
+                               "Try another niche or turn off 'Avoid repeating my videos' in Setup.")
 
         def done(ideas):
             self.ideas = ideas
@@ -3222,7 +3260,7 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
         full = bool(g & {"youtube", "youtube.force-ssl"})
         return ("youtube.upload" in g or full) and ("youtube.readonly" in g or full)
 
-    def _yt_service(self):
+    def _yt_service(self, interactive=True):
         from google.auth.transport.requests import Request
         from google.oauth2.credentials import Credentials
         from google_auth_oauthlib.flow import InstalledAppFlow
@@ -3238,6 +3276,8 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             else:
+                if not interactive:   # background check: never open a browser sign-in on the user
+                    raise RuntimeError("YouTube is not signed in")
                 if not secret.exists():
                     raise RuntimeError("Add your client_secret.json first (Upload → YouTube setup).")
                 flow = InstalledAppFlow.from_client_secrets_file(str(secret), self.SCOPES)

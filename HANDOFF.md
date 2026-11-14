@@ -137,6 +137,12 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
   2026-11-14 follow-up (`9f30920`): the recenter step used to run while the window was still the 200x200 default, so
   it landed off-center (about +540+209 on 1920x1080). `_recenter` now waits for the real size; a launch probe shows
   `1280x820+312+110`, and the 196-test Python suite passes.
+  Duplicate check (`app/duplicate_check.py`, Setup switch "Avoid repeating my videos", default on): before
+  "Get 10 ideas" (also inside Auto) the app reads the signed-in channel's uploads (read-only, private/unlisted
+  included; never opens a browser sign-in, so it falls back to local projects when not signed in) plus the
+  project folder names, adds them to the prompt as "do not repeat", and drops ideas whose title is too close
+  (numbers count as the same word, so 3-minute vs 5-minute matches). Up to three tries, then a clear error. It
+  compares titles only, not script text. Verified once against the real channel (116 videos read, repeat dropped).
 - Commits on `main` after `820e817`: `1685af6` info.t, `1115509` prompt/audit threshold 0.02, `82514b3` handoff,
   `2d2e868` status bar, `019dc9e` window centering, `5c34e44` repair retries, `672a2ad` rig imports, `0a73211` sentence-text check.
 - 2026-11-14 test run, Claude `claude-sonnet-5-5` at medium effort as animation provider, Ollama as script provider
@@ -349,7 +355,7 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
 ## Validation and remaining limits
 
 - 2026-11-14: the full Python suite (`python -m unittest discover -p "test_*.py"` in `app`, studio `.venv`) passed:
-  **196 tests** (and 41 Node tests), after the 2026-11-14 fixes below and the Open project folder button
+  **207 tests** (and 41 Node tests), after the 2026-11-14 fixes below and the Open project folder button
   (`app/project_folder.py`, on the upload page, directly under the Video file field so it is visible without scrolling the card).
 - Last full-suite baseline: **149 Python tests and 16 Node tests passed** before the
   latest portable-import additions. Latest targeted portable suite: **13/13 pass**,
