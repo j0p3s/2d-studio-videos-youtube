@@ -23,6 +23,7 @@ from local_animation import LocalAnimation
 from shot_rules import SHOT_RULES
 from youtube_meta import complete_meta
 from thumb_pick import best_time
+from project_folder import project_folder
 import openart_provider
 import shots_video
 import castworkshop_provider
@@ -3005,6 +3006,8 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
         self.btn_publish = ctk.CTkButton(r4, text="🚀 Publish to YouTube", height=42,
                                          font=ctk.CTkFont(size=15, weight="bold"), command=self.upload)
         self.btn_publish.pack(anchor="w")
+        ctk.CTkButton(r4, text="📂 Open project folder", height=36, fg_color="#1d222b", hover_color="#272d38",
+                      command=self.open_project_folder).pack(anchor="w", pady=(8, 0))
         ctk.CTkButton(r4, text="🔗 YouTube setup", height=36, fg_color="#1d222b", hover_color="#272d38",
                       command=self.youtube_setup).pack(anchor="w", pady=(8, 0))
         self.lbl_up = ctk.CTkLabel(left, text="", text_color=ACCENT)
@@ -3078,6 +3081,13 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
         f = filedialog.askopenfilename(filetypes=[("Images", "*.png *.jpg *.jpeg")])
         if f:
             self._show_thumb(f)
+
+    def open_project_folder(self):
+        folder = project_folder(STUDIO, WORK, self.s)
+        if folder is None:
+            messagebox.showinfo("Project folder", "There is no project folder for this video yet.")
+            return
+        open_path(folder)
 
     def best_frame(self):
         """Move the slider to the best-looking frame of the chosen video."""

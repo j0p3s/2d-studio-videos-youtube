@@ -331,6 +331,9 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
   "The animation now is awesome. Love it" and "Its awesome this way".
 - Accepted direction: teal-hoodie figures, navy interiors, warm amber key/rim light, grounded
   desk/prop actions, timer inserts, close-ups and explanatory diagrams tied to narration.
+- (Deleted on the user's request 2026-11-14, with every other old project and `work/` folder: only
+  `the-5-minute-habit-hack-that-guarantees-11140150` remains. The approved reference below no longer exists on disk
+  and the checker/backup paths named in this file for older projects are gone.)
 - Local project: `growkaz-stickman-studio/projects/the-habit-that-halves-procrastination-11130433`.
   Its 15 scenes were hand-directed with `scenes/sets/cinematic.js`, not automatically generated
   to that quality by a proven end-to-end new-video run. Manual markers protect this reference.
@@ -343,7 +346,8 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
 ## Validation and remaining limits
 
 - 2026-11-14: the full Python suite (`python -m unittest discover -p "test_*.py"` in `app`, studio `.venv`) passed:
-  **193 tests** (and 41 Node tests), after the 2026-11-14 fixes below.
+  **196 tests** (and 41 Node tests), after the 2026-11-14 fixes below and the Open project folder button
+  (`app/project_folder.py`, on the upload page).
 - Last full-suite baseline: **149 Python tests and 16 Node tests passed** before the
   latest portable-import additions. Latest targeted portable suite: **13/13 pass**,
   including cache skipping, required-file permission failures, partial/manual-copy
