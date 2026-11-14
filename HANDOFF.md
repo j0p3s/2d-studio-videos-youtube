@@ -242,6 +242,12 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
 - Script providers: Claude, OpenAI (Codex), Gemini CLI, Gemini API and Ollama. Animation
   also offers OpenArt and CastWorkshop (local). Check actual account/model availability;
   do not assume historic results.
+- Claude model/effort (Setup, `282cd79`): each Claude row has an **Effort** dropdown (default, low, medium, high,
+  extra, max) saved as `script_effort`/`animation_effort`; `ask_claude` passes `--effort` (extra -> `xhigh`) only for
+  Claude, never for local Ollama runs. The Claude Model dropdown offers `model_choices.CLAUDE_SUGGESTIONS` because the
+  CLI has no list to read; typed names are still saved unchecked. Only the four 5.x IDs (`claude-opus-5-5`,
+  `claude-sonnet-5-5`, `claude-fable-5-2`, `claude-haiku-5-5`) were given; the older names are pattern guesses. The
+  GUI layout of the new dropdown has not been viewed. Restart the GUI to load it.
 - Voice: Piper is the default (`en_US-joe-medium`), Qwen3 is optional/local, Edge is online.
   Offline mode replaces Edge with Piper but retains an explicitly selected Qwen3 engine.
   English output applies to all providers; imported recordings are checked with Whisper.
@@ -318,7 +324,7 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
 ## Validation and remaining limits
 
 - 2026-11-14: the full Python suite (`python -m unittest discover -p "test_*.py"` in `app`, studio `.venv`) passed:
-  **176 tests**, after the window-drag and lag-probe changes.
+  **177 tests**, after the Effort dropdown and model suggestions.
 - Last full-suite baseline: **149 Python tests and 16 Node tests passed** before the
   latest portable-import additions. Latest targeted portable suite: **13/13 pass**,
   including cache skipping, required-file permission failures, partial/manual-copy
