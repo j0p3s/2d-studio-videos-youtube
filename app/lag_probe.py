@@ -128,6 +128,122 @@ class LagProbe:
                    % (seconds * 1000, rate, where or "unknown", geom))
 
 
+class DragMeter:
+    """Follows one title-bar drag: how far the window trails the mouse, and how often it moves.
+
+    feed() takes a sample (time, left button down, cursor (x, y), window rect (l, t, r, b)) and
+    returns a summary line when a drag that really moved the window ends, else None.
+    """
+    TITLE_BAND = 48         # px below the window's top edge that count as the title bar
+    MIN_MOVE = 30           # px the cursor must travel for a drag to be reported
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.active = False
+        self.down_prev = False
+        self.errors = []
+        self.rect_changes = 0
+        self.last_rect = None
+        self.last_change_t = None
+        self.last_cursor = None
+        self.last_cursor_t = None
+        self.worst_still = 0.0
+        self.start_t = None
+        self.cursor0 = self.window0 = None
+        self.travel = 0.0
+        self.slices = {}        # half-second slice -> [samples, error sum, window moves, cursor px]
+
+    def feed(self, t, down, cursor, rect):
+        pressed = down and not self.down_prev
+        self.down_prev = down
+        if pressed:
+            self.reset()
+            self.down_prev = True
+            left, top, right, _ = rect
+            if left <= cursor[0] <= right and top <= cursor[1] <= top + self.TITLE_BAND:
+                self.active = True
+                self.start_t, self.cursor0, self.window0 = t, cursor, rect[:2]
+                self.last_rect, self.last_change_t = rect, t
+                self.last_cursor, self.last_cursor_t = cursor, t
+            return None
+        if not self.active:
+            return None
+        if not down:
+            result = self._summary(t)
+            self.reset()
+            return result
+        cursor_px = 0
+        if cursor != self.last_cursor:
+            cursor_px = abs(cursor[0] - self.last_cursor[0]) + abs(cursor[1] - self.last_cursor[1])
+            self.travel += cursor_px
+            self.last_cursor, self.last_cursor_t = cursor, t
+        moved = rect != self.last_rect
+        if moved:
+            self.rect_changes += 1
+            self.last_rect, self.last_change_t = rect, t
+        elif t - self.last_cursor_t < 0.02:        # cursor is moving but the window is not
+            self.worst_still = max(self.worst_still, t - self.last_change_t)
+        dx = (cursor[0] - self.cursor0[0]) - (rect[0] - self.window0[0])
+        dy = (cursor[1] - self.cursor0[1]) - (rect[1] - self.window0[1])
+        err = (dx * dx + dy * dy) ** 0.5
+        self.errors.append(err)
+        sl = self.slices.setdefault(int((t - self.start_t) * 2), [0, 0.0, 0, 0])
+        sl[0] += 1
+        sl[1] += err
+        sl[2] += moved
+        sl[3] += cursor_px
+        return None
+
+    def _summary(self, t):
+        if self.travel < self.MIN_MOVE or len(self.errors) < 20:
+            return None
+        errs = sorted(self.errors)
+        seconds = max(t - self.start_t, 1e-6)
+        return ("Drag trail: window lagged the cursor by avg %.0f px, 95%% of the time under %.0f px, worst %.0f px; "
+                "window moved %.0f times per second; longest pause while the cursor moved %d ms (drag %.1f s). "
+                "Per half second (trail px / window moves per s / cursor px per s): %s"
+                % (sum(errs) / len(errs), errs[int(len(errs) * 0.95) - 1], errs[-1],
+                   self.rect_changes / seconds, self.worst_still * 1000, seconds, self._timeline()))
+
+    def _timeline(self):
+        parts = []
+        for k in sorted(self.slices):
+            n, err, moves, px = self.slices[k]
+            parts.append("%.1fs %.0f/%d/%d" % (k / 2, err / n, moves * 2, px * 2))
+        return "  ".join(parts[:40])
+
+
+def _start_drag_sampler(root, write, alive):
+    """Windows only: a thread that reads the real window and cursor positions every 2 ms."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        user32, winmm = ctypes.windll.user32, ctypes.windll.winmm
+        hwnd = user32.GetAncestor(root.winfo_id(), 2)       # GA_ROOT: the real top-level window
+    except Exception:
+        return
+
+    def sample():
+        winmm.timeBeginPeriod(1)
+        meter, point, rect = DragMeter(), wintypes.POINT(), wintypes.RECT()
+        try:
+            while alive["on"]:
+                user32.GetCursorPos(ctypes.byref(point))
+                user32.GetWindowRect(hwnd, ctypes.byref(rect))
+                down = bool(user32.GetAsyncKeyState(0x01) & 0x8000)
+                line = meter.feed(time.perf_counter(), down, (point.x, point.y),
+                                  (rect.left, rect.top, rect.right, rect.bottom))
+                if line:
+                    write("LAG", line)
+                time.sleep(0.002)
+        finally:
+            winmm.timeEndPeriod(1)
+
+    threading.Thread(target=sample, name="drag-sampler", daemon=True).start()
+
+
 def start(root, write):
     """Begin watching `root` (a Tk window). Returns the probe, or None when switched off."""
     if os.environ.get("STUDIO_LAG_PROBE", "1") == "0":
@@ -156,6 +272,8 @@ def start(root, write):
     root.bind("<Configure>", configure, add="+")
     root.bind("<Destroy>", destroy, add="+")
     threading.Thread(target=watcher, name="lag-probe", daemon=True).start()
+    root.update_idletasks()
+    _start_drag_sampler(root, write, alive)
     beat()
     try:
         scaling = root._get_window_scaling()

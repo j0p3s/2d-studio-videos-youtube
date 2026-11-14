@@ -74,6 +74,7 @@ except ImportError:
     import tkinter.messagebox as mb
     mb.showerror("2D Animation Studio", "customtkinter is not installed.\nRun Install-2D-Studio.cmd first.")
     sys.exit(1)
+import tkinter as tk
 from tkinter import filedialog, messagebox
 
 # ----------------------------------------------------------------------------- data
@@ -291,6 +292,7 @@ class Studio(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
         self._build_sidebar()
         self.pages = {}
+        self._parked = set()
         container = ctk.CTkFrame(self, fg_color="transparent")
         container.grid(row=0, column=1, sticky="nsew", padx=18, pady=(18, 6))
         container.grid_columnconfigure(0, weight=1)
@@ -396,6 +398,14 @@ class Studio(ctk.CTk):
         self._cancel = False
 
     def show(self, key):
+        # Dragging the window lagged badly when it carried all five pages' native windows (about 510),
+        # even hidden ones; it is smooth at about 250. So only the shown page stays inside the main
+        # window: the others are parked as withdrawn top-levels of their own. Their widgets, text and
+        # settings stay intact, and they come back unchanged when opened.
+        for name in self.pages:
+            if name != key:
+                self._park_page(name)
+        self._unpark_page(key)
         self.pages[key].tkraise()
         for k, b in self.nav.items():
             b.configure(fg_color=("#1f6f53" if k == key else "transparent"))
@@ -405,6 +415,25 @@ class Studio(ctk.CTk):
             self._sync_animate_page()
         elif key == "upload":
             self._sync_upload_page()
+
+    def _park_page(self, name):
+        if name in self._parked:
+            return
+        page = self.pages[name]
+        page.grid_remove()
+        try:
+            self.tk.eval(f"wm manage {page}; wm withdraw {page}")
+        except Exception as exc:
+            session_log.write("INFO", f"Could not park the {name} page ({exc}); it stays hidden in the window")
+            return
+        self._parked.add(name)
+
+    def _unpark_page(self, name):
+        page = self.pages[name]
+        if name in self._parked:
+            self.tk.call("wm", "forget", str(page))
+            self._parked.discard(name)
+        page.grid(row=0, column=0, sticky="nsew")
 
     @staticmethod
     def header(parent, title, subtitle):
@@ -1399,18 +1428,39 @@ class Studio(ctk.CTk):
             return items
 
         def show(items):
-            for w in self.checks_frame.winfo_children():
+            # One read-only Text widget instead of about 70 labels: a CTkLabel is three native windows, and
+            # that many windows made dragging the window lag on this page. Scaling is applied by hand.
+            frame = self.checks_frame
+            scale, fonts = frame._apply_widget_scaling, frame._apply_font_scaling
+            try:
+                bg = frame._apply_appearance_mode(frame._bg_color)
+            except Exception:
+                bg = CARD_BG
+            for w in frame.winfo_children():
                 w.destroy()
+            first, value, gap = (round(scale(n)) for n in (24, 250, 160))
+            stops = (first, first + value, first + value + gap, 2 * first + value + gap,
+                     2 * first + 2 * value + gap)
+            pad = round(scale(3))
+            text = tk.Text(frame, width=1, height=(len(items) + 1) // 2, wrap="none", bg=bg, fg="#f1f4f8",
+                           relief="flat", borderwidth=0, highlightthickness=0, cursor="arrow", takefocus=0,
+                           spacing1=pad, spacing3=pad, tabs=stops, insertwidth=0)
+            text.tag_configure("name", font=fonts(ctk.CTkFont(size=14, weight="bold")))
+            text.tag_configure("value", font=fonts(ctk.CTkFont()), foreground=MUTED)
+            text.tag_configure("good", font=fonts(ctk.CTkFont(size=16)), foreground=ACCENT)
+            text.tag_configure("bad", font=fonts(ctk.CTkFont(size=16)), foreground="#ef4444")
             for i, (name, val) in enumerate(items):
-                r, col = divmod(i, 2)
-                good = bool(val)
-                ctk.CTkLabel(self.checks_frame, text=("●" if good else "○"), width=20,
-                             text_color=(ACCENT if good else "#ef4444"),
-                             font=ctk.CTkFont(size=16)).grid(row=r, column=col * 3, sticky="w", pady=3)
-                ctk.CTkLabel(self.checks_frame, text=name, font=ctk.CTkFont(size=14, weight="bold"),
-                             anchor="w", width=250).grid(row=r, column=col * 3 + 1, sticky="w")
-                ctk.CTkLabel(self.checks_frame, text=(val or "missing")[:22], text_color=MUTED,
-                             anchor="w", width=160).grid(row=r, column=col * 3 + 2, sticky="w")
+                if i % 2:
+                    text.insert("end", "\t")
+                text.insert("end", "●" if val else "○", "good" if val else "bad")
+                text.insert("end", "\t")
+                text.insert("end", name, "name")
+                text.insert("end", "\t")
+                text.insert("end", (val or "missing")[:22], "value")
+                if i % 2 or i == len(items) - 1:
+                    text.insert("end", "\n" if i < len(items) - 1 else "")
+            text.configure(state="disabled")
+            text.pack(fill="x")
         self.run_job("Checking tools", work, show)
 
     def doctor_fix(self):

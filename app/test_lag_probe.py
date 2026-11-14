@@ -1,6 +1,6 @@
 import unittest
 
-from lag_probe import LagProbe, STALL_S
+from lag_probe import DragMeter, LagProbe, STALL_S
 
 
 class FakeClock:
@@ -78,6 +78,43 @@ class LagProbeTests(unittest.TestCase):
         self.clock.now += 1.0
         p.beat()
         self.assertEqual([t for k, t in self.lines if t.startswith("Window drag")], [])
+
+
+class DragMeterTests(unittest.TestCase):
+    RECT = (100, 100, 900, 700)
+
+    def run_drag(self, window_follows, steps=100, start_cursor=(300, 110)):
+        m, out, t = DragMeter(), [], 0.0
+        m.feed(t, True, start_cursor, self.RECT)                    # press on the title bar
+        for i in range(1, steps + 1):
+            t += 0.002
+            cursor = (start_cursor[0] + i * 4, start_cursor[1])
+            lag = 0 if window_follows else 40
+            rect = (self.RECT[0] + max(0, i * 4 - lag), self.RECT[1], self.RECT[2] + max(0, i * 4 - lag), self.RECT[3])
+            out.append(m.feed(t, True, cursor, rect))
+        out.append(m.feed(t + 0.002, False, cursor, rect))          # release
+        return [x for x in out if x]
+
+    def test_a_window_that_keeps_up_reports_no_trail(self):
+        line = self.run_drag(True)[0]
+        self.assertIn("avg 0 px", line)
+        self.assertIn("worst 0 px", line)
+
+    def test_a_window_that_trails_is_measured(self):
+        line = self.run_drag(False)[0]
+        self.assertIn("worst 40 px", line)
+
+    def test_the_summary_has_a_per_half_second_timeline(self):
+        line = self.run_drag(False, steps=600)[0]
+        self.assertIn("Per half second", line)
+        self.assertRegex(line, r"0\.0s \d+/\d+/\d+")
+        self.assertRegex(line, r"0\.5s ")
+
+    def test_a_press_outside_the_title_bar_is_ignored(self):
+        self.assertEqual(self.run_drag(False, start_cursor=(300, 400)), [])
+
+    def test_a_click_without_movement_is_not_reported(self):
+        self.assertEqual(self.run_drag(True, steps=3), [])
 
 
 if __name__ == "__main__":
