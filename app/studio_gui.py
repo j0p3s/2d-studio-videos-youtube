@@ -2980,6 +2980,9 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
         ctk.CTkButton(r, text="Browse", width=80, command=lambda: self._browse(self.ent_video, [("Video", "*.mp4 *.mov *.webm")])).pack(side="left", padx=6)
         ctk.CTkButton(r, text="Latest render", width=130, fg_color="#1d222b", hover_color="#272d38",
                       command=lambda: self._set(self.ent_video, self._latest_mp4() or "")).pack(side="left")
+        # Top of the card, not the bottom: this card scrolls and the bottom is out of sight.
+        ctk.CTkButton(left, text="📂 Open project folder", width=190, height=32, fg_color="#1d222b",
+                      hover_color="#272d38", command=self.open_project_folder).pack(anchor="w", padx=14, pady=(8, 0))
         field("Title (max 100)")
         self.ent_title = ctk.CTkEntry(left)
         self.ent_title.pack(fill="x", padx=14)
@@ -3011,8 +3014,6 @@ CHAR_STYLE: <n> | <short name> | <one-line description> | <absolute png path>"""
         self.btn_publish = ctk.CTkButton(r4, text="🚀 Publish to YouTube", height=42,
                                          font=ctk.CTkFont(size=15, weight="bold"), command=self.upload)
         self.btn_publish.pack(anchor="w")
-        ctk.CTkButton(r4, text="📂 Open project folder", height=36, fg_color="#1d222b", hover_color="#272d38",
-                      command=self.open_project_folder).pack(anchor="w", pady=(8, 0))
         ctk.CTkButton(r4, text="🔗 YouTube setup", height=36, fg_color="#1d222b", hover_color="#272d38",
                       command=self.youtube_setup).pack(anchor="w", pady=(8, 0))
         self.lbl_up = ctk.CTkLabel(left, text="", text_color=ACCENT)

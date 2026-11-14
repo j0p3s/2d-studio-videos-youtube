@@ -350,7 +350,7 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
 
 - 2026-11-14: the full Python suite (`python -m unittest discover -p "test_*.py"` in `app`, studio `.venv`) passed:
   **196 tests** (and 41 Node tests), after the 2026-11-14 fixes below and the Open project folder button
-  (`app/project_folder.py`, on the upload page).
+  (`app/project_folder.py`, on the upload page, directly under the Video file field so it is visible without scrolling the card).
 - Last full-suite baseline: **149 Python tests and 16 Node tests passed** before the
   latest portable-import additions. Latest targeted portable suite: **13/13 pass**,
   including cache skipping, required-file permission failures, partial/manual-copy
