@@ -134,6 +134,9 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
   `jointWorld`, no fixed standing pose, props inside the frame, believable beds and large diagram labels.
 - GUI (`app/studio_gui.py`): the status bar keeps Stop and Buy me a coffee fixed while long status text is clipped;
   the window opens centered on the screen (corrected for title bar/borders and DPI). Restart the GUI to load these.
+  2026-11-14 follow-up (`9f30920`): the recenter step used to run while the window was still the 200x200 default, so
+  it landed off-center (about +540+209 on 1920x1080). `_recenter` now waits for the real size; a launch probe shows
+  `1280x820+312+110`, and the 196-test Python suite passes.
 - Commits on `main` after `820e817`: `1685af6` info.t, `1115509` prompt/audit threshold 0.02, `82514b3` handoff,
   `2d2e868` status bar, `019dc9e` window centering, `5c34e44` repair retries, `672a2ad` rig imports, `0a73211` sentence-text check.
 - 2026-11-14 test run, Claude `claude-sonnet-5-5` at medium effort as animation provider, Ollama as script provider
