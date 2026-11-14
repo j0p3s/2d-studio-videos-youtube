@@ -56,6 +56,29 @@ class LagProbeTests(unittest.TestCase):
         self.assertEqual(len(self.lines), 60)
         self.assertEqual(p.stalls, 200)
 
+    def test_a_drag_is_summarised_with_event_rate_and_slow_ticks(self):
+        p = self.make()
+        for i in range(10):
+            self.clock.now += 0.05
+            p.configure((i, 0, 800, 600))
+            p.beat()                       # 50 ms between ticks: slower than 30 ms
+        self.clock.now += 1.0
+        p.beat()                           # the pause ends the drag
+        drags = [t for k, t in self.lines if t.startswith("Window drag")]
+        self.assertEqual(len(drags), 1)
+        self.assertRegex(drags[0], r"10 events in 4[45]\d ms")
+        self.assertIn("slower than 30 ms: 10", drags[0])
+
+    def test_tiny_moves_are_not_reported(self):
+        p = self.make()
+        for _ in range(3):
+            self.clock.now += 0.01
+            p.configure((0, 0, 1, 1))
+            p.beat()
+        self.clock.now += 1.0
+        p.beat()
+        self.assertEqual([t for k, t in self.lines if t.startswith("Window drag")], [])
+
 
 if __name__ == "__main__":
     unittest.main()

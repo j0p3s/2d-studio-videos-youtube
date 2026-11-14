@@ -20,6 +20,9 @@ import traceback
 STALL_S = 0.08
 MAX_LINES = 60
 BEAT_MS = 16
+BURST_GAP_S = 0.25      # a pause this long ends one drag/resize
+SLOW_TICK_S = 0.03      # a UI tick later than this is visible as stutter
+MIN_BURST_EVENTS = 5
 
 
 class LagProbe:
@@ -34,6 +37,7 @@ class LagProbe:
         self.stall_where = ""
         self.lines = 0
         self.stalls = 0
+        self.burst = None       # [first_time, last_time, events, ticks, slow_ticks, worst_gap]
 
     def beat(self):
         """Main thread: the window is alive."""
@@ -42,15 +46,43 @@ class LagProbe:
             start, self.stall_start = self.stall_start, None
             events = self.events - self.stall_events
             where, geom = self.stall_where, self.geom
+            gap = now - self.last_beat
             self.last_beat = now
+            done = self._tick_burst(now, gap)
         if start is not None:
             self._log(now - start, events, where, geom)
+        if done:
+            self._log_burst(done)
+
+    def _tick_burst(self, now, gap):
+        """Lock held. Count this UI tick against the current drag; return the drag when it has ended."""
+        b = self.burst
+        if b is None:
+            return None
+        if now - b[1] > BURST_GAP_S:
+            self.burst = None
+            return b
+        b[3] += 1
+        b[4] += gap > SLOW_TICK_S
+        b[5] = max(b[5], gap)
+        return None
 
     def configure(self, geom):
         """Main thread: the window moved or resized."""
+        now = self.clock()
         with self.lock:
             self.events += 1
             self.geom = geom
+            b = self.burst
+            if b is None or now - b[1] > BURST_GAP_S:
+                finished, self.burst = b, [now, now, 0, 0, 0, 0.0]
+                b = self.burst
+            else:
+                finished = None
+            b[1] = now
+            b[2] += 1
+        if finished:
+            self._log_burst(finished)
 
     def watch(self):
         """Watcher thread: call every ~20 ms."""
@@ -73,6 +105,17 @@ class LagProbe:
         if stack and stack[-1].name == "mainloop":
             return "in Tk mainloop (not inside a Studio callback)"
         return " <- ".join(tail)
+
+    def _log_burst(self, b):
+        first, last, events, ticks, slow, worst = b
+        if events < MIN_BURST_EVENTS or self.lines >= MAX_LINES:
+            return
+        self.lines += 1
+        span = max(last - first, 1e-6)
+        self.write("LAG", "Window drag/resize: %d events in %d ms (one every %.0f ms, %.0f per second); "
+                          "UI ticks %d, slower than %d ms: %d, slowest gap %d ms"
+                   % (events, span * 1000, span * 1000 / events, events / span, ticks,
+                      SLOW_TICK_S * 1000, slow, worst * 1000))
 
     def _log(self, seconds, events, where, geom):
         self.stalls += 1
