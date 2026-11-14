@@ -104,6 +104,10 @@ BUTTON, BUTTON_HOVER = "#0b7a55", "#096346"   # dark enough for white text (the 
 MUTED = "#b6beca"                             # secondary text that is still easy to read on the dark cards
 
 
+# Effort names shown in Setup -> the level the Claude CLI's --effort flag expects.
+CLAUDE_EFFORTS = {"low": "low", "medium": "medium", "high": "high", "extra": "xhigh", "max": "max"}
+
+
 class ModelBox(ctk.CTkComboBox):
     """A model dropdown that can also be typed in. "(default)" reads as an empty setting."""
     def get(self):
@@ -593,7 +597,7 @@ class Studio(ctk.CTk):
         if self._auto:
             label = f"⚡ Auto {self._auto_n}/5 · {label}"
         self.busy = True
-        self._job_ai = {k: v for k, v in self.settings.items() if k.endswith(("_provider", "_model"))}
+        self._job_ai = {k: v for k, v in self.settings.items() if k.endswith(("_provider", "_model", "_effort"))}
         self._cancel = False
         session_log.write("STEP", f"Started: {label}  ({', '.join(f'{k}={v or chr(45)}' for k, v in self._job_ai.items())})")
         self._job = {"label": label, "t0": time.time(), "frac": 0.0, "text": "", "eta": None, "indet": indeterminate}
@@ -771,6 +775,9 @@ class Studio(ctk.CTk):
         model = getattr(self, "_claude_model", None) or getattr(self, "_job_ai", self.settings).get(stage + "_model", "")
         if model:
             cmd += ["--model", model]
+        effort = CLAUDE_EFFORTS.get(getattr(self, "_job_ai", self.settings).get(stage + "_effort", ""))
+        if effort and not getattr(self, "_claude_model", None):   # a local Ollama model has no effort levels
+            cmd += ["--effort", effort]
         if expect_chars:
             cmd.append("--include-partial-messages")
         if full_auto:
@@ -1036,6 +1043,14 @@ class Studio(ctk.CTk):
             ctk.CTkLabel(row_ai, text="Model").pack(side="left", padx=(12, 0))
             self._model_box(row_ai, stage + "_model", 260,
                             lambda stage=stage: self.settings.get(stage + "_provider", "Claude")).pack(side="left", padx=6)
+            ctk.CTkLabel(row_ai, text="Effort").pack(side="left", padx=(12, 0))
+            def save_effort(value, stage=stage):
+                self.settings[stage + "_effort"] = "" if value == model_choices.DEFAULT else value
+                save_settings(self.settings)
+            effort_menu = ctk.CTkOptionMenu(row_ai, values=[model_choices.DEFAULT] + list(CLAUDE_EFFORTS), width=110,
+                                            command=save_effort)
+            effort_menu.set(self.settings.get(stage + "_effort") or model_choices.DEFAULT)
+            effort_menu.pack(side="left", padx=6)
         row_off = ctk.CTkFrame(ai, fg_color="transparent")
         row_off.pack(fill="x", padx=12, pady=5)
         self.sw_offline = ctk.CTkSwitch(row_off, text="Always work offline (Ollama + Piper voice)",
@@ -1179,7 +1194,8 @@ class Studio(ctk.CTk):
         for key, (names, note) in results.items():
             item = self.model_boxes[key]
             item.update(names=names, note=note)
-            item["box"].configure(values=[model_choices.DEFAULT] + list(names or []))
+            offered = names if names is not None else model_choices.suggestions(item["provider"]())
+            item["box"].configure(values=[model_choices.DEFAULT] + list(offered))
             _, problem = model_choices.check(self.settings.get(key, ""), names)
             if problem and not item["may_be_missing"]:
                 notes.append(f"{problem}: pick another one")

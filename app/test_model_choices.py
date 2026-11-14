@@ -61,5 +61,12 @@ class ModelChoicesTests(unittest.TestCase):
         self.assertIn("not signed in", note)
 
 
+class SuggestionTests(unittest.TestCase):
+    def test_claude_suggestions_include_sonnet_5_5_and_stay_unchecked(self):
+        self.assertIn("claude-sonnet-5-5", model_choices.suggestions("Claude"))
+        self.assertEqual(model_choices.suggestions(OLLAMA), [])
+        self.assertEqual(check("claude-sonnet-5-5", None), ("claude-sonnet-5-5", ""))   # no list: saved unchecked
+
+
 if __name__ == "__main__":
     unittest.main()

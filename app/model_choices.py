@@ -21,6 +21,20 @@ TIMEOUT = 20
 GEMINI_NOT_TEXT = ("tts", "image", "banana", "lyria", "transcribe", "embedding", "aqa", "veo", "imagen")
 
 
+# Claude Code accepts these names but cannot list them without an API key, so they are offered as
+# suggestions only: a typed name is still saved without a check.
+CLAUDE_SUGGESTIONS = [
+    "claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-2", "claude-haiku-5-5",
+    "claude-fable-5-1", "claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5", "claude-fable-5",
+    "claude-opus-4-8", "claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6",
+]
+
+
+def suggestions(provider):
+    """Names to offer in the dropdown when the provider has no list the studio can read."""
+    return list(CLAUDE_SUGGESTIONS) if provider == "Claude" else []
+
+
 def _get(url, headers):
     with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=TIMEOUT) as reply:
         return json.load(reply)
