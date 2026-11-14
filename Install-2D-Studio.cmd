@@ -4,6 +4,25 @@ chcp 65001 >nul
 title 2D Animation Studio - Installer
 color 0A
 
+rem ---------- run as administrator (re-launches itself elevated, once) ----------
+fltmc >nul 2>&1
+if errorlevel 1 (
+  if /i "%~1"=="elevated" (
+    echo.
+    echo  [X] Administrator rights were not granted. Right-click this file and choose
+    echo      "Run as administrator", then accept the prompt.
+    pause
+    exit /b 1
+  )
+  echo  Asking Windows for administrator rights...
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath $env:ComSpec -ArgumentList '/c','\"\"%~f0\"\" elevated' -WorkingDirectory '%~dp0' -Verb RunAs" >nul 2>&1
+  if errorlevel 1 (
+    echo  [X] The administrator prompt was cancelled or failed.
+    pause
+  )
+  exit /b
+)
+
 rem ==========================================================================
 rem  2D Animation Studio installer
 rem  Installs: Git, Node.js LTS, Python 3.12, FFmpeg, Claude Code CLI,
