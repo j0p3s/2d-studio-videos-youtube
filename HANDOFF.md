@@ -1,6 +1,6 @@
 # Handoff — 2D Animation Studio
 
-Updated 2026-11-13. This file describes current behavior. Older release/session notes are
+Updated 2026-11-14. This file describes current behavior. Older release/session notes are
 archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current instructions.
 
 ## Project and publication
@@ -158,6 +158,32 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
 
 ## Current product behavior
 
+- Window dragging (fixed 2026-11-14): the Studio window lagged ("rubber-banding") while dragged by the title
+  bar. Cause: the number of native Windows child windows under the main window, not Python speed. Every
+  CustomTkinter widget is 2-3 native windows (frame + canvas + label), and hidden pages still kept theirs;
+  the window carried about 510 (731 Tk widgets). Measured by hand-dragging test windows: smooth at about
+  250-310 native windows, laggy at about 420 and above; 1050 flat plain Tk widgets were smooth, nested/overlapping
+  composites (CTk-style) lagged. Hiding with `grid_remove`/`tkraise` does NOT help; destroying does.
+  `Studio.show` now parks every page except the shown one as a withdrawn top-level (`wm manage` + `wm withdraw`,
+  restored with `wm forget` + `grid`), so widgets, typed text and logs survive and only about 150-260 native
+  windows stay in the main window. The Setup tool-check list is one read-only `tk.Text` instead of about 63
+  `CTkLabel`s (each label alone is 3 windows). Rule for new UI: do not add many CTk widgets to a page (rows of
+  labels, big lists); use one `tk.Text`/`ttk.Treeview` for long lists, and count native windows with
+  `EnumChildWindows` on `GetAncestor(winfo_id(), 2)` (a page is about 90-190, the sidebar/status bar/frames about 65).
+- Lag probe (`app/lag_probe.py`, on by default, `STUDIO_LAG_PROBE=0` turns it off; temporary diagnostic that was
+  kept): writes `LAG` lines to `studio.log` for UI freezes of 80 ms or more (with the main-thread stack) and for
+  every title-bar drag (event rate, slow UI ticks, and a "Drag trail" from a 2 ms sampler of the real window and
+  cursor positions with a half-second timeline). The drag trail measured the window following the cursor within
+  about 1 px even while the user saw lag, so the lag was visual and only the native-window-count tests found it.
+  Still open: a 0.3-0.8 s freeze while the first window builds (CTkScrollableFrame scrollbar `_draw` calls
+  `update_idletasks`); not fixed, not related to dragging.
+- Installer: `Install-2D-Studio.cmd` now relaunches itself elevated (UAC prompt; the elevated copy gets the argument
+  `elevated` and stops with a message if rights are refused).
+- Setup row "OpenAI (Codex) CLI (optional) missing" while a global npm install works: the app puts the studio's
+  `.tools` folder first on PATH, and a leftover `.tools\codex.cmd` shim whose `node_modules\@openai\codex` was gone
+  shadowed the working install. Fix: Setup -> Install OpenAI (Codex) (or
+  `npm install --prefix .tools -g @openai/codex`), then restart Studio and sign in. Later npm installs into `.tools`
+  can remove such packages again (the Playwright install did before).
 - Characters: new skeletal rig (`app/skeleton.mjs`, docs in the offline guide). Poses are fixed-length
   bone angles with joint limits, IK reach/plant and planted-foot walk/run; they solve to the existing
   11 joints, so the old `pose()` API and all checkers still work. Installed by `patch_rig.py`
@@ -291,6 +317,8 @@ archived in [HANDOFF-HISTORY.md](docs/HANDOFF-HISTORY.md) and are not current in
 
 ## Validation and remaining limits
 
+- 2026-11-14: the full Python suite (`python -m unittest discover -p "test_*.py"` in `app`, studio `.venv`) passed:
+  **176 tests**, after the window-drag and lag-probe changes.
 - Last full-suite baseline: **149 Python tests and 16 Node tests passed** before the
   latest portable-import additions. Latest targeted portable suite: **13/13 pass**,
   including cache skipping, required-file permission failures, partial/manual-copy
